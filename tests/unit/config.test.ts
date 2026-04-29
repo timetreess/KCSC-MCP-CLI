@@ -1,0 +1,16 @@
+import { describe, expect, it } from "vitest";
+import { loadConfig, redactSecret } from "../../src/config.js";
+
+describe("config", () => {
+  it("loads KCSC_API_KEY from provided env", () => {
+    expect(loadConfig({ KCSC_API_KEY: "abc123" }).kcscApiKey).toBe("abc123");
+  });
+
+  it("throws actionable missing key error", () => {
+    expect(() => loadConfig({})).toThrow("KCSC_API_KEY");
+  });
+
+  it("redacts secrets", () => {
+    expect(redactSecret("abcdef12")).toBe("ab****12");
+  });
+});
