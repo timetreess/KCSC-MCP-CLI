@@ -76,6 +76,14 @@ export const kdsViewerFixture: readonly KcscViewerItem[] = [
         level: 4,
         label: "본문",
         contents: "<p>설계지반정수 = (평균치)&plusmn;(표준편차) (4.4-1)</p>"
+      },
+      {
+        no: 5748,
+        sort: 75,
+        title: "4.5 되메우기 및 다짐",
+        level: 3,
+        label: "(1)",
+        contents: "<p>되메우기 재료는 소정의 다짐도를 확보하여야 하며 현장 밀도시험으로 확인한다.</p>"
       }
     ]
   }

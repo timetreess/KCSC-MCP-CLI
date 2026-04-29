@@ -4,6 +4,7 @@ import type {
   KcscParentCode,
   KcscViewerItem,
   KcscViewerSection,
+  LatestCheckResult,
   ProjectType,
   SearchStandardInput,
   SpecialtyType,
@@ -98,6 +99,35 @@ export class StandardsService {
     }
 
     return toDocument(item, parsed.type, parsed.apiCode);
+  }
+
+  async latestCheck(codeInput: string): Promise<LatestCheckResult> {
+    const parsed = parseStandardCode(codeInput);
+    if (!parsed) {
+      throw new StandardsServiceError("Invalid standard code format. Expected forms like KDS 11 10 05 or KCS571005.");
+    }
+
+    const metadata = await this.client.fetchCodeList();
+    const summary = metadata
+      .map((item) => toSummary(item))
+      .find((candidate) => candidate?.codeType === parsed.type && candidate.apiCode === parsed.apiCode);
+
+    if (!summary) {
+      return {
+        inputCode: parsed.formatted,
+        exists: false,
+        latestKnown: false,
+        message: `${parsed.formatted} was not found in current KCSC CodeList metadata. Absence from this search scope is not proof that no standard exists.`
+      };
+    }
+
+    return {
+      inputCode: parsed.formatted,
+      exists: true,
+      latestKnown: true,
+      standard: summary,
+      message: `${summary.code} exists in current KCSC CodeList metadata. This confirms current metadata status, not project contractual applicability.`
+    };
   }
 }
 

@@ -1,0 +1,134 @@
+import type { ClauseEvidence, ConfidenceLabel, FindClauseInput, StandardDocument, StandardSection, StandardSummary } from "../api/kcsc-types.js";
+import { StandardsService } from "./standards.js";
+
+const SYNONYMS: readonly (readonly string[])[] = [
+  ["되메우기", "되메움", "backfill"],
+  ["다짐", "compaction", "밀도관리"],
+  ["흙막이", "가시설", "토류벽", "토류"],
+  ["배수", "집수", "우수", "관거", "암거"],
+  ["연약지반", "지반개량", "치환", "압밀"],
+  ["방수", "차수", "누수", "지수"]
+];
+
+export class ClauseFinder {
+  constructor(private readonly standards: StandardsService) {}
+
+  async findClause(input: FindClauseInput): Promise<readonly ClauseEvidence[]> {
+    const query = input.query.trim();
+    if (!query) {
+      throw new Error("Clause search query is required.");
+    }
+
+    const documents = input.standardCode
+      ? [await this.standards.getStandard(input.standardCode)]
+      : await this.getCandidateDocuments(input);
+
+    const terms = expandTerms(query);
+    const evidences = documents.flatMap((document) => rankDocumentSections(document, terms));
+
+    return evidences
+      .filter((evidence) => evidence.score > 0)
+      .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code, "ko"))
+      .slice(0, input.limit ?? 10);
+  }
+
+  private async getCandidateDocuments(input: FindClauseInput): Promise<readonly StandardDocument[]> {
+    const candidates = await this.standards.searchStandard({ ...input, limit: Math.min(input.limit ?? 5, 5) });
+    const documents: StandardDocument[] = [];
+
+    for (const candidate of candidates) {
+      try {
+        documents.push(await this.standards.getStandard(candidate.code));
+      } catch {
+        // Candidate metadata can exist even when detail fetch fails; skip and keep searching.
+      }
+    }
+
+    return documents;
+  }
+}
+
+export function expandTerms(query: string): readonly string[] {
+  const baseTerms = tokenize(query);
+  const expanded = new Set(baseTerms);
+
+  for (const group of SYNONYMS) {
+    if (group.some((term) => baseTerms.includes(term.toLowerCase()))) {
+      for (const term of group) {
+        expanded.add(term.toLowerCase());
+      }
+    }
+  }
+
+  return [...expanded];
+}
+
+export function rankDocumentSections(document: StandardDocument, terms: readonly string[]): readonly ClauseEvidence[] {
+  const pathStack: string[] = [];
+  return document.sections.map((section) => {
+    updatePath(pathStack, section);
+    const text = section.text.trim();
+    const score = scoreSection(section, pathStack, terms);
+    const confidence = confidenceFor(text, score);
+
+    return {
+      standardType: document.standardType,
+      codeType: document.codeType,
+      ...(document.specialtyType ? { specialtyType: document.specialtyType } : {}),
+      code: document.code,
+      apiCode: document.apiCode,
+      name: document.name,
+      ...(document.updateDate ? { updateDate: document.updateDate } : {}),
+      ...(document.version ? { version: document.version } : {}),
+      sourceUrl: document.sourceUrl,
+      sectionTitle: section.title,
+      sectionLabel: section.label,
+      sectionPath: [...pathStack],
+      text,
+      confidence,
+      score
+    };
+  });
+}
+
+function updatePath(pathStack: string[], section: StandardSection): void {
+  const level = section.level ?? 1;
+  const title = section.title.trim();
+  if (!title) {
+    return;
+  }
+  pathStack.splice(Math.max(level - 1, 0));
+  pathStack[level - 1] = title;
+}
+
+function scoreSection(section: StandardSection, path: readonly string[], terms: readonly string[]): number {
+  const haystack = `${path.join(" ")} ${section.title} ${section.label} ${section.text}`.toLowerCase();
+  let score = 0;
+  for (const term of terms) {
+    if (haystack.includes(term)) {
+      score += section.text.toLowerCase().includes(term) ? 5 : 2;
+    }
+  }
+  if (section.text === "내용 없음" || section.text.length === 0) {
+    score -= 10;
+  }
+  return score;
+}
+
+function confidenceFor(text: string, score: number): ConfidenceLabel {
+  if (score > 0 && text.length > 0 && text !== "내용 없음") {
+    return "원문 직접 근거";
+  }
+  if (score > 0) {
+    return "관련 조항 추론";
+  }
+  return "근거 미확인";
+}
+
+function tokenize(input: string): readonly string[] {
+  return input
+    .replace(/[()\[\]{}"']/g, " ")
+    .split(/[\s,，·/]+/)
+    .map((term) => term.trim().toLowerCase())
+    .filter((term) => term.length > 0);
+}

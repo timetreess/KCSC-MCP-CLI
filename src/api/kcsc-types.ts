@@ -125,3 +125,47 @@ export interface SearchStandardInput {
   readonly workType?: WorkType;
   readonly limit?: number;
 }
+
+export interface FindClauseInput extends SearchStandardInput {
+  readonly standardCode?: string;
+}
+
+export interface ClauseEvidence {
+  readonly standardType: StandardTypeFilter;
+  readonly codeType: StandardCodeType | string;
+  readonly specialtyType?: SpecialtyType;
+  readonly code: string;
+  readonly apiCode: string;
+  readonly name: string;
+  readonly updateDate?: string;
+  readonly version?: string;
+  readonly sourceUrl: string;
+  readonly sectionTitle: string;
+  readonly sectionLabel: string;
+  readonly sectionPath: readonly string[];
+  readonly text: string;
+  readonly confidence: ConfidenceLabel;
+  readonly score: number;
+}
+
+export interface LatestCheckResult {
+  readonly inputCode: string;
+  readonly exists: boolean;
+  readonly latestKnown: boolean;
+  readonly standard?: StandardSummary;
+  readonly message: string;
+}
+
+export interface CitationMatch {
+  readonly raw: string;
+  readonly code: string;
+  readonly apiCode: string;
+  readonly codeType: StandardCodeType;
+  readonly normalized: string;
+}
+
+export interface CitationVerification extends CitationMatch {
+  readonly exists: boolean;
+  readonly standard?: StandardSummary;
+  readonly message: string;
+}

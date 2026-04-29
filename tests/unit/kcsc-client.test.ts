@@ -23,7 +23,7 @@ describe("KcscClient", () => {
   it("parses CodeViewer array responses", () => {
     const parsed = parseCodeViewerResponse(kdsViewerFixture);
     expect(parsed?.code).toBe("111005");
-    expect(parsed?.list).toHaveLength(3);
+    expect(parsed?.list).toHaveLength(4);
   });
 
   it("fetches CodeList using injected fetch", async () => {
