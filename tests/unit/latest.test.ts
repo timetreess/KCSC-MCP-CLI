@@ -13,12 +13,14 @@ describe("latestCheck", () => {
     const result = await serviceWithCodeList().latestCheck("KDS 11 10 05");
     expect(result.exists).toBe(true);
     expect(result.latestKnown).toBe(true);
-    expect(result.message).toContain("not project contractual applicability");
+    expect(result.metadataStatus).toBe("current-metadata-found");
+    expect(result.message).toContain("does not compare historical versions");
   });
 
   it("does not treat absence as proof no standard exists", async () => {
     const result = await serviceWithCodeList().latestCheck("KDS 99 99 99");
     expect(result.exists).toBe(false);
+    expect(result.metadataStatus).toBe("not-found-in-current-metadata");
     expect(result.message).toContain("not proof");
   });
 });

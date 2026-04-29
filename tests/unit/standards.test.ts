@@ -12,6 +12,15 @@ describe("StandardsService", () => {
     const service = serviceWith(async () => ({ ok: true, status: 200, statusText: "OK", json: async () => codeListFixture }));
     const results = await service.searchStandard({ query: "KDS 11 10 05" });
     expect(results[0]?.code).toBe("KDS 11 10 05");
+    expect(results[0]?.reason).toContain("정확한 기준코드 일치: KDS 11 10 05");
+  });
+
+  it("returns separate KDS and KCS result sets for topic-based dual search", async () => {
+    const service = serviceWith(async () => ({ ok: true, status: 200, statusText: "OK", json: async () => codeListFixture }));
+    const result = await service.searchStandardDual({ query: "공통" });
+    expect(result.kdsResults[0]?.codeType).toBe("KDS");
+    expect(result.kcsResults[0]?.codeType).toBe("KCS");
+    expect(result.caveat).toContain("코드번호의 1:1 대응");
   });
 
   it("filters specialty families", async () => {

@@ -6,6 +6,10 @@ describe("config", () => {
     expect(loadConfig({ KCSC_API_KEY: "abc123" }).kcscApiKey).toBe("abc123");
   });
 
+  it("normalizes supported legacy API key names", () => {
+    expect(loadConfig({ SERVICE_KEY: "legacy123" }).kcscApiKey).toBe("legacy123");
+  });
+
   it("throws actionable missing key error", () => {
     expect(() => loadConfig({})).toThrow("KCSC_API_KEY");
   });

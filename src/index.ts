@@ -4,3 +4,4 @@ export * from "./config.js";
 export * from "./core/code-parser.js";
 export * from "./core/formatting.js";
 export * from "./core/standards.js";
+export * from "./core/applicability.js";

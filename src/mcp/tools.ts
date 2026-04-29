@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { SearchStandardInput } from "../api/kcsc-types.js";
 import { KcscClient } from "../api/kcsc-client.js";
 import { loadConfig } from "../config.js";
+import { ApplicabilityChecker } from "../core/applicability.js";
 import { ClauseFinder } from "../core/clauses.js";
 import { verifyCitations } from "../core/citations.js";
 import { StandardsService } from "../core/standards.js";
@@ -93,6 +94,32 @@ export function registerKcscTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "search_standard_dual",
+    {
+      title: "Search KDS and KCS Together",
+      description: "Search KDS design standards and KCS construction specifications in parallel for the same topic and return separate result sets.",
+      inputSchema: {
+        query: z.string().min(1).describe("Natural-language topic, e.g. 터널 방수 or 되메우기 다짐."),
+        project_type: projectTypeSchema.optional().describe("Optional project preset applied to both KDS and KCS searches."),
+        work_type: workTypeSchema.optional().describe("Optional work-type ranking heuristic applied to both KDS and KCS searches."),
+        limit: z.number().int().min(1).max(50).optional().describe("Maximum result count per standard type. Defaults to 10.")
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => {
+      try {
+        const service = createService();
+        const results = await service.searchStandardDual(toSearchInput(input));
+        return {
+          content: [{ type: "text", text: JSON.stringify(results, null, 2) }]
+        };
+      } catch (error) {
+        return toToolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
     "find_clause",
     {
       title: "Find Clause Evidence",
@@ -136,6 +163,38 @@ export function registerKcscTools(server: McpServer): void {
       try {
         const service = createService();
         const result = await service.latestCheck(code);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+        };
+      } catch (error) {
+        return toToolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "check_applicability",
+    {
+      title: "Check Standard Applicability",
+      description: "Advisory check for whether a standard may apply to a project/work context. This does not determine contractual applicability.",
+      inputSchema: {
+        code: z.string().min(1).describe("Standard code such as KDS 11 10 05 or KCS571005."),
+        project_type: projectTypeSchema.optional().describe("Optional project type to check against."),
+        work_type: workTypeSchema.optional().describe("Optional work type to check against."),
+        specialty_type: specialtyTypeSchema.optional().describe("Optional specialty standard family context.")
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ code, project_type, work_type, specialty_type }) => {
+      try {
+        const service = createService();
+        const checker = new ApplicabilityChecker(service);
+        const result = await checker.check({
+          standardCode: code,
+          ...(project_type ? { projectType: project_type } : {}),
+          ...(work_type ? { workType: work_type } : {}),
+          ...(specialty_type ? { specialtyType: specialty_type } : {})
+        });
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
         };

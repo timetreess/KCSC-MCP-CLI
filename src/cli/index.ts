@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
 import { KcscClient } from "../api/kcsc-client.js";
-import type { ClauseEvidence, CitationVerification, LatestCheckResult, ProjectType, SearchStandardInput, SpecialtyTypeFilter, StandardDocument, StandardSummary, StandardTypeFilter, WorkType } from "../api/kcsc-types.js";
+import type { ApplicabilityResult, ClauseEvidence, CitationVerification, LatestCheckResult, ProjectType, SearchStandardInput, SpecialtyTypeFilter, StandardDocument, StandardDualResult, StandardSummary, StandardTypeFilter, WorkType } from "../api/kcsc-types.js";
 import { loadConfig } from "../config.js";
+import { ApplicabilityChecker } from "../core/applicability.js";
 import { ClauseFinder } from "../core/clauses.js";
 import { verifyCitations } from "../core/citations.js";
 import { StandardsService } from "../core/standards.js";
+import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 interface CliIo {
   readonly stdout: Pick<NodeJS.WriteStream, "write">;
@@ -44,6 +47,13 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
       return 0;
     }
 
+    if (parsed.command === "searchdual") {
+      const query = parsed.positional.join(" ").trim();
+      const results = await service.searchStandardDual(toSearchInput(query, parsed.options));
+      io.stdout.write(formatSearchDualResults(results));
+      return 0;
+    }
+
     if (parsed.command === "clause") {
       const query = parsed.positional.join(" ").trim();
       const finder = new ClauseFinder(service);
@@ -56,6 +66,21 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
       const code = parsed.positional.join(" ").trim();
       const result = await service.latestCheck(code);
       io.stdout.write(formatLatestCheck(result));
+      return 0;
+    }
+
+    if (parsed.command === "applicable") {
+      const code = parsed.positional.join(" ").trim();
+      if (!code) {
+        throw new Error("applicable requires a standard code.");
+      }
+      const checker = new ApplicabilityChecker(service);
+      const result = await checker.check({
+        standardCode: code,
+        ...(parsed.options.project ? { projectType: parsed.options.project as ProjectType } : {}),
+        ...(parsed.options.work ? { workType: parsed.options.work as WorkType } : {})
+      });
+      io.stdout.write(formatApplicability(result));
       return 0;
     }
 
@@ -140,6 +165,20 @@ function formatSearchResults(results: readonly StandardSummary[]): string {
     .join("\n\n")}\n`;
 }
 
+function formatSearchDualResults(results: StandardDualResult): string {
+  return [
+    `# KDS/KCS 동시 조회: ${results.query}`,
+    "",
+    "## KDS 설계기준 후보",
+    formatSearchResults(results.kdsResults).trim(),
+    "",
+    "## KCS 표준시방서 후보",
+    formatSearchResults(results.kcsResults).trim(),
+    "",
+    `- 주의사항: ${results.caveat}`
+  ].join("\n") + "\n";
+}
+
 function formatDocument(document: StandardDocument): string {
   const sections = document.sections
     .slice(0, 30)
@@ -187,11 +226,29 @@ function formatLatestCheck(result: LatestCheckResult): string {
     `- 기준코드: ${result.standard?.code ?? result.inputCode}`,
     `- 최신본 여부: ${result.latestKnown ? "현재 KCSC metadata에서 확인됨" : "미확인"}`,
     `- 존재 여부: ${result.exists ? "확인됨" : "미확인"}`,
+    `- 메타데이터 상태: ${result.metadataStatus}`,
     result.standard ? `- 기준명: ${result.standard.name}` : undefined,
     result.standard ? `- 개정일: ${result.standard.updateDate ?? result.standard.version ?? "미확인"}` : undefined,
     result.standard ? `- 출처 URL: ${result.standard.sourceUrl}` : undefined,
     `- 적용성 판단: 최신 metadata 확인은 프로젝트 계약 적용 여부를 의미하지 않습니다.`,
     `- 메시지: ${result.message}`
+  ].filter((line): line is string => typeof line === "string").join("\n") + "\n";
+}
+
+function formatApplicability(result: ApplicabilityResult): string {
+  return [
+    `# ${result.standard.code} ${result.standard.name}`,
+    `- 기준코드: ${result.standard.code}`,
+    `- 기준명: ${result.standard.name}`,
+    result.requestedProjectType ? `- 요청 프로젝트: ${result.requestedProjectType}` : undefined,
+    result.requestedWorkType ? `- 요청 공종: ${result.requestedWorkType}` : undefined,
+    `- 관련 프로젝트 후보: ${result.matchedProjects.length > 0 ? result.matchedProjects.join(", ") : "미확인"}`,
+    `- 관련 공종 후보: ${result.matchedWorks.length > 0 ? result.matchedWorks.join(", ") : "미확인"}`,
+    `- 적용성 판단: ${result.recommendation}`,
+    `- 신뢰도: ${result.confidence}`,
+    result.reasoning.length > 0 ? `- 판단 근거: ${result.reasoning.join(" / ")}` : undefined,
+    `- 주의사항: ${result.caveat}`,
+    `- 출처 URL: ${result.standard.sourceUrl}`
   ].filter((line): line is string => typeof line === "string").join("\n") + "\n";
 }
 
@@ -212,10 +269,14 @@ function formatCitationVerifications(verifications: readonly CitationVerificatio
 }
 
 function helpText(): string {
-  return `KCSC Standards CLI\n\nUsage:\n  kcsc search "터널 방수" [--type KDS|KCS|specialty|all] [--specialty EXCS] [--project road] [--work earthwork]\n  kcsc get "KDS 11 10 05"\n  kcsc clause "되메우기 다짐" [--code "KCS 11 20 15"]\n  kcsc latest "KDS 11 10 05"\n  kcsc verify ./report.md\n  kcsc verify --text "KDS 11 10 05에 따른다"\n`;
+  return `KCSC Standards CLI\n\nUsage:\n  kcsc search "터널 방수" [--type KDS|KCS|specialty|all] [--specialty EXCS] [--project road] [--work earthwork] [--limit 10]\n  kcsc searchdual "터널 방수" [--project tunnel] [--work waterproofing] [--limit 10]\n  kcsc get "KDS 11 10 05"\n  kcsc clause "되메우기 다짐" [--code "KCS 11 20 15"] [--project road] [--work earthwork]\n  kcsc applicable "KDS 11 10 05" [--project road] [--work earthwork]\n  kcsc latest "KDS 11 10 05"\n  kcsc verify ./report.md\n  kcsc verify --text "KDS 11 10 05에 따른다"\n`;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invokedAsEntrypoint = process.argv[1]
+  ? realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
+  : false;
+
+if (invokedAsEntrypoint) {
   const exitCode = await runCli(process.argv.slice(2));
   process.exit(exitCode);
 }

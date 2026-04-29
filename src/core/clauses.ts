@@ -2,12 +2,21 @@ import type { ClauseEvidence, ConfidenceLabel, FindClauseInput, StandardDocument
 import { StandardsService } from "./standards.js";
 
 const SYNONYMS: readonly (readonly string[])[] = [
-  ["되메우기", "되메움", "backfill"],
-  ["다짐", "compaction", "밀도관리"],
+  ["되메우기", "되메움", "backfill", "뒷채움"],
+  ["다짐", "compaction", "밀도관리", "현장밀도"],
   ["흙막이", "가시설", "토류벽", "토류"],
   ["배수", "집수", "우수", "관거", "암거"],
   ["연약지반", "지반개량", "치환", "압밀"],
-  ["방수", "차수", "누수", "지수"]
+  ["방수", "차수", "누수", "지수"],
+  ["말뚝", "파일", "pile"],
+  ["교좌장치", "교좌", "받침", "bridge bearing"],
+  ["신축이음", "expansion joint", "이음장치"],
+  ["균열", "보수", "보강", "repair"],
+  ["콘크리트", "타설", "양생", "레미콘"],
+  ["철근", "배근", "조립"],
+  ["강재", "강구조", "용접", "welding"],
+  ["계측", "침하", "변위", "계측관리"],
+  ["터널", "라이닝", "지보"]
 ];
 
 export class ClauseFinder {
@@ -69,7 +78,7 @@ export function rankDocumentSections(document: StandardDocument, terms: readonly
     updatePath(pathStack, section);
     const text = section.text.trim();
     const score = scoreSection(section, pathStack, terms);
-    const confidence = confidenceFor(text, score);
+    const confidence = confidenceFor(text, score, hasBodyTerm(text, terms));
 
     return {
       standardType: document.standardType,
@@ -115,14 +124,19 @@ function scoreSection(section: StandardSection, path: readonly string[], terms: 
   return score;
 }
 
-function confidenceFor(text: string, score: number): ConfidenceLabel {
-  if (score > 0 && text.length > 0 && text !== "내용 없음") {
+function confidenceFor(text: string, score: number, bodyMatched: boolean): ConfidenceLabel {
+  if (score > 0 && bodyMatched && text.length > 0 && text !== "내용 없음") {
     return "원문 직접 근거";
   }
   if (score > 0) {
     return "관련 조항 추론";
   }
   return "근거 미확인";
+}
+
+function hasBodyTerm(text: string, terms: readonly string[]): boolean {
+  const normalized = text.toLowerCase();
+  return terms.some((term) => normalized.includes(term));
 }
 
 function tokenize(input: string): readonly string[] {

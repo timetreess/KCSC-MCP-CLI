@@ -152,8 +152,17 @@ export interface LatestCheckResult {
   readonly inputCode: string;
   readonly exists: boolean;
   readonly latestKnown: boolean;
+  readonly metadataStatus: "current-metadata-found" | "not-found-in-current-metadata";
   readonly standard?: StandardSummary;
   readonly message: string;
+}
+
+export interface StandardDualResult {
+  readonly query: string;
+  readonly searchedAt: string;
+  readonly kdsResults: readonly StandardSummary[];
+  readonly kcsResults: readonly StandardSummary[];
+  readonly caveat: string;
 }
 
 export interface CitationMatch {
@@ -168,4 +177,25 @@ export interface CitationVerification extends CitationMatch {
   readonly exists: boolean;
   readonly standard?: StandardSummary;
   readonly message: string;
+}
+
+export interface CheckApplicabilityInput {
+  readonly standardCode: string;
+  readonly projectType?: ProjectType;
+  readonly workType?: WorkType;
+  readonly specialtyType?: SpecialtyTypeFilter;
+}
+
+export interface ApplicabilityResult {
+  readonly standard: StandardSummary;
+  readonly requestedProjectType?: ProjectType;
+  readonly requestedWorkType?: WorkType;
+  readonly projectMatched: boolean;
+  readonly workMatched: boolean;
+  readonly matchedProjects: readonly ProjectType[];
+  readonly matchedWorks: readonly WorkType[];
+  readonly reasoning: readonly string[];
+  readonly recommendation: string;
+  readonly caveat: string;
+  readonly confidence: ConfidenceLabel;
 }

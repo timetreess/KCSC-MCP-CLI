@@ -4,8 +4,8 @@
   "description": "KCSC Standards MCP/CLI for querying Korean construction standards evidence.",
   "type": "module",
   "bin": {
-    "kcsc": "./dist/cli/index.js",
-    "kcsc-mcp": "./dist/mcp/server.js"
+    "kcsc": "./dist/src/cli/index.js",
+    "kcsc-mcp": "./dist/src/mcp/server.js"
   },
   "files": [
     "dist",

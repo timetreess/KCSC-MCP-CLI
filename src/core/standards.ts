@@ -8,6 +8,7 @@ import type {
   ProjectType,
   SearchStandardInput,
   SpecialtyType,
+  StandardDualResult,
   StandardCodeType,
   StandardDocument,
   StandardSection,
@@ -22,28 +23,28 @@ import { normalizeHtml } from "./formatting.js";
 const SPECIALTY_TYPES: readonly SpecialtyType[] = ["EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS"];
 const DEFAULT_LIMIT = 10;
 
-const PROJECT_KEYWORDS: Readonly<Record<ProjectType, readonly string[]>> = {
-  road: ["도로", "포장", "일반국도"],
-  railway: ["철도", "궤도", "신호"],
-  bridge: ["교량", "교좌", "신축이음"],
-  tunnel: ["터널", "라이닝", "방수"],
-  river: ["하천", "제방", "호안"],
-  dam: ["댐", "저수지"],
-  port: ["항만", "어항", "방파제", "항"],
-  waterworks: ["상수도", "하수도", "하수관로", "관로", "수도"],
-  site: ["단지", "택지", "조성"],
-  building: ["건축", "건축공사"],
-  plant: ["기계설비", "전기설비", "산업환경설비", "플랜트"],
+export const PROJECT_KEYWORDS: Readonly<Record<ProjectType, readonly string[]>> = {
+  road: ["도로", "포장", "일반국도", "고속도로", "차도"],
+  railway: ["철도", "궤도", "신호", "레일", "노반"],
+  bridge: ["교량", "교좌", "교좌장치", "신축이음", "교각", "교대"],
+  tunnel: ["터널", "라이닝", "방수", "차수", "지보"],
+  river: ["하천", "제방", "호안", "수문", "하상"],
+  dam: ["댐", "저수지", "댐체", "여수로"],
+  port: ["항만", "어항", "방파제", "항", "부두", "하역", "호안", "해상"],
+  waterworks: ["상수도", "하수도", "하수관로", "관로", "수도", "상수", "하수", "정수", "수처리"],
+  site: ["단지", "택지", "조성", "택지개발", "단지조성", "기반시설"],
+  building: ["건축", "건축공사", "건축물"],
+  plant: ["기계설비", "전기설비", "산업환경설비", "플랜트", "정유", "가스", "산업설비"],
   common: ["공통", "총칙", "일반사항"]
 };
 
-const WORK_KEYWORDS: Readonly<Record<WorkType, readonly string[]>> = {
-  earthwork: ["토공", "되메우기", "되메움", "흙쌓기", "흙깎기", "다짐", "backfill"],
+export const WORK_KEYWORDS: Readonly<Record<WorkType, readonly string[]>> = {
+  earthwork: ["토공", "되메우기", "되메움", "흙쌓기", "성토", "흙깎기", "절토", "다짐", "backfill", "compaction"],
   geotechnical: ["지반", "지질", "연약지반", "지반조사"],
-  foundation: ["기초", "말뚝", "파일"],
-  concrete: ["콘크리트", "타설", "양생"],
-  steel: ["강구조", "강재", "용접"],
-  temporary: ["가설", "흙막이", "토류", "가시설"],
+  foundation: ["기초", "말뚝", "파일", "기초공", "지정"],
+  concrete: ["콘크리트", "타설", "양생", "레미콘", "시멘트", "철근", "배근"],
+  steel: ["강구조", "강재", "용접", "볼트", "이음"],
+  temporary: ["가설", "흙막이", "토류", "가시설", "버팀", "동바리"],
   pavement: ["포장", "아스팔트", "시멘트콘크리트 포장"],
   drainage: ["배수", "집수", "우수", "관거", "암거"],
   waterproofing: ["방수", "차수", "누수", "지수"],
@@ -80,11 +81,26 @@ export class StandardsService {
       .map((item) => toSummary(item))
       .filter((summary): summary is StandardSummary => summary !== null)
       .filter((summary) => matchesFilters(summary, input))
-      .map((summary) => ({ summary, score: scoreSummary(summary, exactCode, terms, projectTerms, workTerms) }))
+      .map((summary) => scoreSummary(summary, exactCode, terms, projectTerms, workTerms))
       .filter((result) => result.score > 0 || terms.length === 0)
       .sort((a, b) => b.score - a.score || a.summary.code.localeCompare(b.summary.code, "ko"));
 
     return candidates.slice(0, input.limit ?? DEFAULT_LIMIT).map((candidate) => candidate.summary);
+  }
+
+  async searchStandardDual(input: Omit<SearchStandardInput, "standardType" | "specialtyType">): Promise<StandardDualResult> {
+    const [kdsResults, kcsResults] = await Promise.all([
+      this.searchStandard({ ...input, standardType: "KDS" }),
+      this.searchStandard({ ...input, standardType: "KCS" })
+    ]);
+
+    return {
+      query: input.query,
+      searchedAt: new Date().toISOString(),
+      kdsResults,
+      kcsResults,
+      caveat: "KDS/KCS 동시 조회는 주제 기반 병렬 검색 결과입니다. 코드번호의 1:1 대응이나 계약문서상 적용 우선순위를 의미하지 않습니다."
+    };
   }
 
   async getStandard(codeInput: string): Promise<StandardDocument> {
@@ -117,6 +133,7 @@ export class StandardsService {
         inputCode: parsed.formatted,
         exists: false,
         latestKnown: false,
+        metadataStatus: "not-found-in-current-metadata",
         message: `${parsed.formatted} was not found in current KCSC CodeList metadata. Absence from this search scope is not proof that no standard exists.`
       };
     }
@@ -125,8 +142,9 @@ export class StandardsService {
       inputCode: parsed.formatted,
       exists: true,
       latestKnown: true,
+      metadataStatus: "current-metadata-found",
       standard: summary,
-      message: `${summary.code} exists in current KCSC CodeList metadata. This confirms current metadata status, not project contractual applicability.`
+      message: `${summary.code} exists in current KCSC CodeList metadata. This confirms current metadata presence only; it does not compare historical versions or determine project contractual applicability.`
     };
   }
 }
@@ -234,33 +252,38 @@ function scoreSummary(
   queryTerms: readonly string[],
   projectTerms: readonly string[],
   workTerms: readonly string[]
-): number {
+): { readonly summary: StandardSummary; readonly score: number } {
   let score = 0;
+  const reason: string[] = [];
   const haystack = [summary.code, summary.apiCode, summary.name, ...summary.parentPath].join(" ").toLowerCase();
 
   if (exactCode && summary.codeType === exactCode.type && summary.apiCode === exactCode.apiCode) {
     score += 1000;
+    reason.push(`정확한 기준코드 일치: ${summary.code}`);
   }
 
   for (const term of queryTerms) {
     if (haystack.includes(term.toLowerCase())) {
       score += 10;
+      reason.push(`검색어 일치: ${term}`);
     }
   }
 
   for (const term of projectTerms) {
     if (haystack.includes(term.toLowerCase())) {
       score += 4;
+      reason.push(`프로젝트 분류 키워드 일치: ${term}`);
     }
   }
 
   for (const term of workTerms) {
     if (haystack.includes(term.toLowerCase())) {
       score += 3;
+      reason.push(`공종 분류 키워드 일치: ${term}`);
     }
   }
 
-  return score;
+  return { summary: { ...summary, reason }, score };
 }
 
 function tokenize(input: string): readonly string[] {

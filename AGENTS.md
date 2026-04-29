@@ -110,8 +110,7 @@ Follow the PRD release plan, but implement in thin, testable slices.
 ### v0.3 - Then add
 
 1. KDS/KCS simultaneous lookup
-2. `compare_versions` if historical data is actually available
-3. proposal/report evidence review workflows using only verified snippets
+2. proposal/report evidence review workflows using only verified snippets
 
 Do not add answer-drafting features unless the PRD is explicitly changed. Keep the product evidence-first: retrieve, verify, classify, and format standards evidence rather than generating final response prose.
 
@@ -126,7 +125,6 @@ Tool names must match the PRD and use snake_case:
 - `find_clause`
 - `check_applicability`
 - `latest_check`
-- `compare_versions`
 - `verify_citation`
 
 Every MCP tool must have:
@@ -301,7 +299,7 @@ When normalizing HTML, preserve evidence-critical details where possible: tables
 
 `CodeList` appears to expose current metadata. Use it as the source of truth for latest checks in MVP.
 
-If historical versions are not available from the API, `compare_versions` must return a clear unsupported/insufficient-data result instead of fabricating a comparison.
+KCSC OpenAPI does not currently expose historical document bodies through the supported `CodeList` and `CodeViewer` endpoints. Do not implement or advertise `compare_versions` unless a verified historical-version endpoint becomes available.
 
 ## Citation Verification
 

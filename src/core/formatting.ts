@@ -4,7 +4,8 @@ const ENTITY_MAP: Readonly<Record<string, string>> = {
   lt: "<",
   gt: ">",
   quot: "\"",
-  apos: "'"
+  apos: "'",
+  plusmn: "±"
 };
 
 export function normalizeHtml(html: string): string {
@@ -12,7 +13,9 @@ export function normalizeHtml(html: string): string {
     html
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<\/(tr|p|div|li|h[1-6])>/gi, "\n")
+      .replace(/<tr[^>]*>/gi, "\n")
+      .replace(/<\/tr>/gi, "\n")
+      .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<\/(td|th)>/gi, " | ")
       .replace(/<[^>]+>/g, "")

@@ -14,6 +14,14 @@ describe("normalizeHtml", () => {
     expect(normalizeHtml("<table><tr><td>항목</td><td>기준값</td></tr></table>")).toContain("항목 | 기준값");
   });
 
+  it("keeps table row boundaries visible", () => {
+    expect(normalizeHtml("<table><tr><td>항목</td><td>기준값</td></tr><tr><td>다짐도</td><td>95%</td></tr></table>")).toBe("항목 | 기준값 |\n다짐도 | 95% |");
+  });
+
+  it("decodes formula entities used in standards", () => {
+    expect(normalizeHtml("<p>평균치&plusmn;표준편차</p>")).toBe("평균치±표준편차");
+  });
+
   it("removes script content", () => {
     expect(normalizeHtml("<script>alert(1)</script><p>본문</p>")).toBe("본문");
   });
