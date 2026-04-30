@@ -1,4 +1,4 @@
-import type { StandardCodeType } from "../api/kcsc-types.js";
+import { STANDARD_CODE_TYPES, type StandardCodeType } from "../api/kcsc-types.js";
 
 export interface ParsedStandardCode {
   readonly type: StandardCodeType;
@@ -6,20 +6,8 @@ export interface ParsedStandardCode {
   readonly formatted: string;
 }
 
-const SUPPORTED_TYPES: readonly StandardCodeType[] = [
-  "KDS",
-  "KCS",
-  "EXCS",
-  "KRACS",
-  "KRCCS",
-  "KWCS",
-  "LHCS",
-  "NHCS",
-  "SMCS"
-];
-
 export function isSupportedCodeType(value: string): value is StandardCodeType {
-  return SUPPORTED_TYPES.includes(value as StandardCodeType);
+  return STANDARD_CODE_TYPES.some((type) => type === value);
 }
 
 export function parseStandardCode(input: string): ParsedStandardCode | null {

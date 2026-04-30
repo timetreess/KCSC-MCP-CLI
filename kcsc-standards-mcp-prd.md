@@ -1,4 +1,4 @@
-# PRD v0.3: KCSC Standards MCP/CLI
+# PRD v1.0: KCSC Standards MCP/CLI
 
 ## 1. 제품 정의
 
@@ -493,18 +493,20 @@ AI가 존재하지 않는 조항을 생성할 수 있습니다.
 - 인용 검증
 - 프로젝트/공종 프리셋
 
-### v0.3
-
-- KDS/KCS 동시 조회
-  - KDS/KCS 동시 조회 결과 보강
-- 입찰·제안서 기준 근거 검토 보강
-
 ### v1.0
 
+- KDS/KCS 동시 조회
+- 적용성 advisory check
 - npm 배포
-- 원격 MCP 서버
+- 로컬 stdio MCP 서버
 - README, 예제, 테스트셋
-- Claude Desktop, Cursor, opencode 연동 가이드
+- Claude Desktop, Cursor, opencode 등 MCP 클라이언트 연동 가이드
+- MIT 라이선스 오픈소스 공개
+
+### 향후 검토
+
+- 입찰·제안서 기준 근거 검토 보강
+- 원격 MCP 서버
 
 ---
 

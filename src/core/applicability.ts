@@ -1,26 +1,8 @@
-import type { ApplicabilityResult, CheckApplicabilityInput, ConfidenceLabel, ProjectType, StandardDocument, StandardSummary, WorkType } from "../api/kcsc-types.js";
+import { PROJECT_TYPES, WORK_TYPES, type ApplicabilityResult, type CheckApplicabilityInput, type ConfidenceLabel, type ProjectType, type StandardDocument, type StandardSummary, type WorkType } from "../api/kcsc-types.js";
 import { PROJECT_KEYWORDS, StandardsService, WORK_KEYWORDS } from "./standards.js";
 
 const APPLICABILITY_CAVEAT =
   "적용성 판단은 계약문서·특기시방서·발주처 요구사항·전문기술검토 확인이 필요합니다. 본 도구는 참고용이며 최종 공학적 판단을 대체하지 않습니다.";
-
-const PROJECT_TYPES: readonly ProjectType[] = ["road", "railway", "bridge", "tunnel", "river", "dam", "port", "waterworks", "site", "building", "plant", "common"];
-const WORK_TYPES: readonly WorkType[] = [
-  "earthwork",
-  "geotechnical",
-  "foundation",
-  "concrete",
-  "steel",
-  "temporary",
-  "pavement",
-  "drainage",
-  "waterproofing",
-  "seismic",
-  "quality_test",
-  "measurement",
-  "safety",
-  "maintenance"
-];
 
 export class ApplicabilityChecker {
   constructor(private readonly standards: StandardsService) {}

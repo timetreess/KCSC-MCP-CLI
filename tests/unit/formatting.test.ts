@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeHtml } from "../../src/core/formatting.js";
+import { decodeHtmlEntities, normalizeHtml } from "../../src/core/formatting.js";
 
 describe("normalizeHtml", () => {
   it("strips paragraph tags while preserving Korean text", () => {
@@ -20,6 +20,12 @@ describe("normalizeHtml", () => {
 
   it("decodes formula entities used in standards", () => {
     expect(normalizeHtml("<p>평균치&plusmn;표준편차</p>")).toBe("평균치±표준편차");
+  });
+
+  it("decodes numeric and common publishing entities safely", () => {
+    expect(decodeHtmlEntities("&#60;KDS&#x7B;11&#x7D;")).toBe("<KDS{11}");
+    expect(decodeHtmlEntities("A&mdash;B&ndash;C&hellip;&copy;&reg;&trade;")).toBe("A—B–C…©®™");
+    expect(decodeHtmlEntities("&#99999999;&unknown;")).toBe("&#99999999;&unknown;");
   });
 
   it("removes script content", () => {

@@ -1,49 +1,39 @@
-export type StandardCodeType =
-  | "KDS"
-  | "KCS"
-  | "EXCS"
-  | "KRACS"
-  | "KRCCS"
-  | "KWCS"
-  | "LHCS"
-  | "NHCS"
-  | "SMCS";
+export const STANDARD_CODE_TYPES = ["KDS", "KCS", "EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS"] as const;
 
-export type StandardTypeFilter = "KDS" | "KCS" | "specialty" | "all";
+export type StandardCodeType = (typeof STANDARD_CODE_TYPES)[number];
+
+export const STANDARD_TYPE_FILTERS = ["KDS", "KCS", "specialty", "all"] as const;
+
+export type StandardTypeFilter = (typeof STANDARD_TYPE_FILTERS)[number];
 
 export type SpecialtyType = Exclude<StandardCodeType, "KDS" | "KCS">;
 
-export type SpecialtyTypeFilter = SpecialtyType | "all_specialty";
+export const SPECIALTY_TYPE_FILTERS = ["EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS", "all_specialty"] as const;
 
-export type ProjectType =
-  | "road"
-  | "railway"
-  | "bridge"
-  | "tunnel"
-  | "river"
-  | "dam"
-  | "port"
-  | "waterworks"
-  | "site"
-  | "building"
-  | "plant"
-  | "common";
+export type SpecialtyTypeFilter = (typeof SPECIALTY_TYPE_FILTERS)[number];
 
-export type WorkType =
-  | "earthwork"
-  | "geotechnical"
-  | "foundation"
-  | "concrete"
-  | "steel"
-  | "temporary"
-  | "pavement"
-  | "drainage"
-  | "waterproofing"
-  | "seismic"
-  | "quality_test"
-  | "measurement"
-  | "safety"
-  | "maintenance";
+export const PROJECT_TYPES = ["road", "railway", "bridge", "tunnel", "river", "dam", "port", "waterworks", "site", "building", "plant", "common"] as const;
+
+export type ProjectType = (typeof PROJECT_TYPES)[number];
+
+export const WORK_TYPES = [
+  "earthwork",
+  "geotechnical",
+  "foundation",
+  "concrete",
+  "steel",
+  "temporary",
+  "pavement",
+  "drainage",
+  "waterproofing",
+  "seismic",
+  "quality_test",
+  "measurement",
+  "safety",
+  "maintenance"
+] as const;
+
+export type WorkType = (typeof WORK_TYPES)[number];
 
 export type ConfidenceLabel = "원문 직접 근거" | "관련 조항 추론" | "근거 미확인";
 

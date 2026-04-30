@@ -7,7 +7,7 @@ import { registerKcscTools } from "./tools.js";
 const server = new McpServer(
   {
     name: "kcsc-standards-mcp",
-    version: "0.2.0"
+    version: "1.0.0"
   },
   {
     instructions: [

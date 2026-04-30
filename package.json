@@ -1,16 +1,47 @@
 {
   "name": "kcsc-standards-mcp",
-  "version": "0.2.0",
-  "description": "KCSC Standards MCP/CLI for querying Korean construction standards evidence.",
+  "version": "1.0.0",
+  "description": "KCSC Standards MCP/CLI for retrieving verifiable Korean construction standards evidence.",
   "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    }
+  },
   "bin": {
     "kcsc": "./dist/src/cli/index.js",
     "kcsc-mcp": "./dist/src/mcp/server.js"
   },
   "files": [
-    "dist",
+    "dist/src",
+    "!dist/src/**/*.map",
     "README.md",
+    "LICENSE",
     ".env.example"
+  ],
+  "author": "timetreess",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timetreess/kds.git"
+  },
+  "homepage": "https://github.com/timetreess/kds#readme",
+  "bugs": {
+    "url": "https://github.com/timetreess/kds/issues"
+  },
+  "keywords": [
+    "kcsc",
+    "kds",
+    "kcs",
+    "construction-standards",
+    "korean-construction",
+    "mcp",
+    "modelcontextprotocol",
+    "cli",
+    "standards"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -10,9 +10,13 @@ export function extractCitations(text: string): readonly CitationMatch[] {
 
   for (const match of text.matchAll(CITATION_PATTERN)) {
     const raw = match[0];
-    const codeType = match[1]?.toUpperCase();
+    const rawCodeType = match[1]?.toUpperCase();
+    if (!rawCodeType || !isSupportedCodeType(rawCodeType)) {
+      continue;
+    }
+    const codeType = rawCodeType as StandardCodeType;
     const apiCode = `${match[2] ?? ""}${match[3] ?? ""}${match[4] ?? ""}`;
-    if (!codeType || !isSupportedCodeType(codeType) || !parseStandardCode(`${codeType} ${apiCode}`)) {
+    if (!parseStandardCode(`${codeType} ${apiCode}`)) {
       continue;
     }
 
@@ -54,9 +58,4 @@ export function verifyCitations(text: string, metadata: readonly KcscListItem[])
         : `${citation.normalized} was not found in current KCSC metadata. Check formatting, contract documents, and expanded search scope.`
     };
   });
-}
-
-export function normalizeCitationCodeType(value: string): StandardCodeType | null {
-  const upper = value.toUpperCase();
-  return isSupportedCodeType(upper) ? upper : null;
 }

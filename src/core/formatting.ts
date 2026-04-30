@@ -5,7 +5,13 @@ const ENTITY_MAP: Readonly<Record<string, string>> = {
   gt: ">",
   quot: "\"",
   apos: "'",
-  plusmn: "±"
+  plusmn: "±",
+  mdash: "—",
+  ndash: "–",
+  hellip: "…",
+  copy: "©",
+  reg: "®",
+  trade: "™"
 };
 
 export function normalizeHtml(html: string): string {
@@ -29,11 +35,23 @@ export function normalizeHtml(html: string): string {
 export function decodeHtmlEntities(value: string): string {
   return value.replace(/&(#\d+|#x[\da-fA-F]+|[a-zA-Z]+);/g, (match, entity: string) => {
     if (entity.startsWith("#x")) {
-      return String.fromCodePoint(Number.parseInt(entity.slice(2), 16));
+      return decodeCodePoint(match, Number.parseInt(entity.slice(2), 16));
     }
     if (entity.startsWith("#")) {
-      return String.fromCodePoint(Number.parseInt(entity.slice(1), 10));
+      return decodeCodePoint(match, Number.parseInt(entity.slice(1), 10));
     }
     return ENTITY_MAP[entity] ?? match;
   });
+}
+
+function decodeCodePoint(fallback: string, value: number): string {
+  if (!Number.isInteger(value) || value < 0 || value > 0x10ffff) {
+    return fallback;
+  }
+
+  try {
+    return String.fromCodePoint(value);
+  } catch {
+    return fallback;
+  }
 }

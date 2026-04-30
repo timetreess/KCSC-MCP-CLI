@@ -20,10 +20,24 @@ describe("KcscClient", () => {
     expect(parsed[0]?.codeType).toBe("KDS");
   });
 
+  it("filters malformed CodeList items", () => {
+    const parsed = parseCodeListResponse({ list: [null, {}, "bad", { codeType: "KDS", code: "111005", name: "지반 설계 일반" }] });
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.code).toBe("111005");
+    expect(parseCodeListResponse(null)).toEqual([]);
+    expect(parseCodeListResponse({ list: "not-an-array" })).toEqual([]);
+  });
+
   it("parses CodeViewer array responses", () => {
     const parsed = parseCodeViewerResponse(kdsViewerFixture);
     expect(parsed?.code).toBe("111005");
     expect(parsed?.list).toHaveLength(4);
+  });
+
+  it("filters malformed CodeViewer responses", () => {
+    expect(parseCodeViewerResponse(null)).toBeNull();
+    expect(parseCodeViewerResponse({ list: [null, {}, { codeType: "KDS", code: "111005", list: [] }] })?.code).toBe("111005");
+    expect(parseCodeViewerResponse({ list: "not-an-array" })).toBeNull();
   });
 
   it("fetches CodeList using injected fetch", async () => {
@@ -35,5 +49,15 @@ describe("KcscClient", () => {
     });
     const client = new KcscClient({ apiKey: "test-secret", fetchFn });
     await expect(client.fetchCodeList()).resolves.toHaveLength(3);
+  });
+
+  it("reports HTTP and JSON parsing failures without leaking keys", async () => {
+    const httpClient = new KcscClient({ apiKey: "test-secret", fetchFn: async () => ({ ok: false, status: 500, statusText: "Server Error", json: async () => ({}) }) });
+    await expect(httpClient.fetchCodeList()).rejects.toThrow("HTTP 500");
+
+    const jsonClient = new KcscClient({ apiKey: "test-secret", fetchFn: async () => ({ ok: true, status: 200, statusText: "OK", json: async () => { throw new Error("bad json"); } }) });
+    await expect(jsonClient.fetchCodeList()).rejects.toThrow("invalid JSON");
+    expect(jsonClient.toString()).toContain("REDACTED");
+    expect(jsonClient.toString()).not.toContain("test-secret");
   });
 });

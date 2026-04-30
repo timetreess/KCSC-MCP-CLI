@@ -5,3 +5,6 @@ export * from "./core/code-parser.js";
 export * from "./core/formatting.js";
 export * from "./core/standards.js";
 export * from "./core/applicability.js";
+export * from "./core/clauses.js";
+export * from "./core/citations.js";
+export * from "./core/validators.js";

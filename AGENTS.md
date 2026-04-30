@@ -107,10 +107,13 @@ Follow the PRD release plan, but implement in thin, testable slices.
 3. `verify_citation`
 4. Project/work classification presets
 
-### v0.3 - Then add
+### v1.0 - Open-source release
 
 1. KDS/KCS simultaneous lookup
-2. proposal/report evidence review workflows using only verified snippets
+2. Advisory `check_applicability`
+3. MIT license, README, tests, package metadata, and GitHub-ready documentation
+
+Future proposal/report evidence review workflows should use only verified snippets and remain evidence-first.
 
 Do not add answer-drafting features unless the PRD is explicitly changed. Keep the product evidence-first: retrieve, verify, classify, and format standards evidence rather than generating final response prose.
 
@@ -121,6 +124,7 @@ Use the MCP SDK `McpServer` and `server.registerTool(...)` pattern.
 Tool names must match the PRD and use snake_case:
 
 - `search_standard`
+- `search_standard_dual`
 - `get_standard`
 - `find_clause`
 - `check_applicability`

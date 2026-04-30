@@ -64,7 +64,11 @@ export class KcscClient {
     if (!response.ok) {
       throw new KcscClientError(`KCSC OpenAPI request failed: HTTP ${response.status} ${response.statusText}`);
     }
-    return response.json();
+    try {
+      return await response.json();
+    } catch (error) {
+      throw new KcscClientError(`KCSC OpenAPI returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
 
@@ -91,9 +95,41 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isKcscListItem(value: unknown): value is KcscListItem {
-  return isObject(value);
+  if (!isObject(value)) {
+    return false;
+  }
+
+  return typeof value.codeType === "string" && typeof value.code === "string" && typeof value.name === "string" && isOptionalNumberOrString(value.no) && isOptionalString(value.fullCode) && isOptionalString(value.version) && isOptionalString(value.updateDate) && isOptionalString(value.message) && isOptionalParentCodes(value.listParentCodes);
 }
 
 function isKcscViewerItem(value: unknown): value is KcscViewerItem {
-  return isObject(value);
+  if (!isObject(value)) {
+    return false;
+  }
+
+  return typeof value.codeType === "string" && typeof value.code === "string" && isOptionalNumberOrString(value.no) && isOptionalString(value.fullCode) && isOptionalString(value.name) && isOptionalString(value.version) && isOptionalString(value.updateDate) && isOptionalString(value.message) && (value.list === undefined || value.list === null || (Array.isArray(value.list) && value.list.every(isKcscViewerSection)));
+}
+
+function isKcscViewerSection(value: unknown): value is NonNullable<KcscViewerItem["list"]>[number] {
+  if (!isObject(value)) {
+    return false;
+  }
+
+  return isOptionalNumberOrString(value.no) && isOptionalNumberOrString(value.sort) && isOptionalString(value.title) && isOptionalNumberOrString(value.level) && isOptionalString(value.label) && isOptionalString(value.contents);
+}
+
+function isOptionalString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isOptionalNumberOrString(value: unknown): value is number | string | null | undefined {
+  return value === undefined || value === null || typeof value === "number" || typeof value === "string";
+}
+
+function isOptionalParentCodes(value: unknown): value is KcscListItem["listParentCodes"] {
+  if (value === undefined || value === null || typeof value === "string") {
+    return true;
+  }
+
+  return Array.isArray(value) && value.every((parent) => isObject(parent) && isOptionalString(parent.codeType) && isOptionalString(parent.fullCode) && isOptionalString(parent.name));
 }

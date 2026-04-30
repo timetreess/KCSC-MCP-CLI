@@ -1,28 +1,34 @@
 #!/usr/bin/env node
 
-import { KcscClient } from "../api/kcsc-client.js";
-import type { ApplicabilityResult, ClauseEvidence, CitationVerification, LatestCheckResult, ProjectType, SearchStandardInput, SpecialtyTypeFilter, StandardDocument, StandardDualResult, StandardSummary, StandardTypeFilter, WorkType } from "../api/kcsc-types.js";
-import { loadConfig } from "../config.js";
+import type { KcscListItem, ApplicabilityResult, ClauseEvidence, CitationVerification, LatestCheckResult, SearchStandardInput, StandardDocument, StandardDualResult, StandardSummary } from "../api/kcsc-types.js";
 import { ApplicabilityChecker } from "../core/applicability.js";
 import { ClauseFinder } from "../core/clauses.js";
 import { verifyCitations } from "../core/citations.js";
-import { StandardsService } from "../core/standards.js";
+import { createKcscClient, createStandardsService } from "../core/service-factory.js";
+import { buildSearchInputFromOptions, parseProjectType, parseWorkType } from "../core/validators.js";
+import type { StandardsService } from "../core/standards.js";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-interface CliIo {
+export interface CliIo {
   readonly stdout: Pick<NodeJS.WriteStream, "write">;
   readonly stderr: Pick<NodeJS.WriteStream, "write">;
 }
 
-interface ParsedCli {
+export interface ParsedCli {
   readonly command: string;
   readonly positional: readonly string[];
   readonly options: Readonly<Record<string, string>>;
 }
 
-export async function runCli(args: readonly string[], io: CliIo = { stdout: process.stdout, stderr: process.stderr }): Promise<number> {
+export interface CliDependencies {
+  readonly createService?: () => StandardsService;
+  readonly fetchMetadata?: () => Promise<readonly KcscListItem[]>;
+  readonly readTextFile?: (path: string) => Promise<string>;
+}
+
+export async function runCli(args: readonly string[], io: CliIo = { stdout: process.stdout, stderr: process.stderr }, dependencies: CliDependencies = {}): Promise<number> {
   const parsed = parseArgs(args);
   if (parsed.command === "help" || parsed.command === "--help" || parsed.command === "-h" || parsed.command === "") {
     io.stdout.write(helpText());
@@ -30,8 +36,9 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
   }
 
   try {
-    const config = loadConfig();
-    const service = new StandardsService(new KcscClient({ apiKey: config.kcscApiKey }));
+    const service = (dependencies.createService ?? createStandardsService)();
+    const fetchMetadata = dependencies.fetchMetadata ?? (async () => createKcscClient().fetchCodeList());
+    const readTextFile = dependencies.readTextFile ?? ((path: string) => readFile(path, "utf8"));
 
     if (parsed.command === "search") {
       const query = parsed.positional.join(" ").trim();
@@ -75,10 +82,12 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
         throw new Error("applicable requires a standard code.");
       }
       const checker = new ApplicabilityChecker(service);
+      const projectType = parseProjectType(parsed.options.project);
+      const workType = parseWorkType(parsed.options.work);
       const result = await checker.check({
         standardCode: code,
-        ...(parsed.options.project ? { projectType: parsed.options.project as ProjectType } : {}),
-        ...(parsed.options.work ? { workType: parsed.options.work as WorkType } : {})
+        ...(projectType ? { projectType } : {}),
+        ...(workType ? { workType } : {})
       });
       io.stdout.write(formatApplicability(result));
       return 0;
@@ -86,11 +95,11 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
 
     if (parsed.command === "verify") {
       const target = parsed.positional.join(" ").trim();
-      const text = parsed.options.text ?? (target ? await readFile(target, "utf8") : "");
+      const text = parsed.options.text ?? (target ? await readTextFile(target) : "");
       if (!text.trim()) {
         throw new Error("verify requires a Markdown/text file path or --text input.");
       }
-      const metadata = await new KcscClient({ apiKey: config.kcscApiKey }).fetchCodeList();
+      const metadata = await fetchMetadata();
       const verifications = verifyCitations(text, metadata);
       io.stdout.write(formatCitationVerifications(verifications));
       return 0;
@@ -134,14 +143,7 @@ export function parseArgs(args: readonly string[]): ParsedCli {
 }
 
 function toSearchInput(query: string, options: Readonly<Record<string, string>>): SearchStandardInput {
-  return {
-    query,
-    ...(options.type ? { standardType: options.type as StandardTypeFilter } : {}),
-    ...(options.specialty ? { specialtyType: options.specialty as SpecialtyTypeFilter } : {}),
-    ...(options.project ? { projectType: options.project as ProjectType } : {}),
-    ...(options.work ? { workType: options.work as WorkType } : {}),
-    ...(options.limit ? { limit: Number.parseInt(options.limit, 10) } : {})
-  };
+  return buildSearchInputFromOptions(query, options);
 }
 
 function formatSearchResults(results: readonly StandardSummary[]): string {

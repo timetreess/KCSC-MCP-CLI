@@ -1,69 +1,42 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import type { SearchStandardInput } from "../api/kcsc-types.js";
-import { KcscClient } from "../api/kcsc-client.js";
-import { loadConfig } from "../config.js";
 import { ApplicabilityChecker } from "../core/applicability.js";
 import { ClauseFinder } from "../core/clauses.js";
 import { verifyCitations } from "../core/citations.js";
-import { StandardsService } from "../core/standards.js";
+import { getKcscClient, getStandardsService, toSearchInput, toToolError, toToolResult, type KcscToolDependencies } from "./handlers.js";
+import {
+  applicabilityOutputSchema,
+  checkApplicabilityInputSchema,
+  citationsOutputSchema,
+  clausesOutputSchema,
+  documentOutputSchema,
+  dualOutputSchema,
+  findClauseInputSchema,
+  getStandardInputSchema,
+  latestCheckInputSchema,
+  latestOutputSchema,
+  resultsOutputSchema,
+  searchStandardDualInputSchema,
+  searchStandardInputSchema,
+  verifyCitationInputSchema
+} from "./schemas.js";
 
-const standardTypeSchema = z.enum(["KDS", "KCS", "specialty", "all"]);
-const specialtyTypeSchema = z.enum(["EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS", "all_specialty"]);
-const projectTypeSchema = z.enum([
-  "road",
-  "railway",
-  "bridge",
-  "tunnel",
-  "river",
-  "dam",
-  "port",
-  "waterworks",
-  "site",
-  "building",
-  "plant",
-  "common"
-]);
-const workTypeSchema = z.enum([
-  "earthwork",
-  "geotechnical",
-  "foundation",
-  "concrete",
-  "steel",
-  "temporary",
-  "pavement",
-  "drainage",
-  "waterproofing",
-  "seismic",
-  "quality_test",
-  "measurement",
-  "safety",
-  "maintenance"
-]);
+export type KcscToolRegistrar = Pick<McpServer, "registerTool">;
 
-export function registerKcscTools(server: McpServer): void {
+export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscToolDependencies = {}): void {
   server.registerTool(
     "search_standard",
     {
       title: "Search Korean Construction Standards",
       description: "Search KDS, KCS, and specialty standard metadata from KCSC CodeList by topic, code, project, and work type.",
-      inputSchema: {
-        query: z.string().min(1).describe("Natural-language topic or exact standard code, e.g. 터널 방수 or KDS 11 10 05."),
-        standard_type: standardTypeSchema.optional().describe("Standards scope: KDS, KCS, specialty, or all. Defaults to all."),
-        specialty_type: specialtyTypeSchema.optional().describe("Optional specialty standard family API codeType filter, e.g. EXCS or LHCS."),
-        project_type: projectTypeSchema.optional().describe("Optional project preset mapped to API parent branches and Korean keywords."),
-        work_type: workTypeSchema.optional().describe("Optional work-type heuristic for ranking; not a guaranteed native KCSC taxonomy."),
-        limit: z.number().int().min(1).max(50).optional().describe("Maximum result count. Defaults to 10.")
-      },
+      inputSchema: searchStandardInputSchema,
+      outputSchema: resultsOutputSchema,
       annotations: { readOnlyHint: true }
     },
     async (input) => {
       try {
-        const service = createService();
+        const service = getStandardsService(dependencies);
         const results = await service.searchStandard(toSearchInput(input));
-        return {
-          content: [{ type: "text", text: JSON.stringify({ results }, null, 2) }]
-        };
+        return toToolResult({ results });
       } catch (error) {
         return toToolError(error);
       }
@@ -75,18 +48,15 @@ export function registerKcscTools(server: McpServer): void {
     {
       title: "Get Korean Construction Standard",
       description: "Retrieve a KCSC standard document by code using CodeViewer and return metadata plus normalized sections.",
-      inputSchema: {
-        code: z.string().min(1).describe("Standard code such as KDS 11 10 05, KCS-57-10-05, or KDS111005.")
-      },
+      inputSchema: getStandardInputSchema,
+      outputSchema: documentOutputSchema,
       annotations: { readOnlyHint: true }
     },
     async ({ code }) => {
       try {
-        const service = createService();
+        const service = getStandardsService(dependencies);
         const document = await service.getStandard(code);
-        return {
-          content: [{ type: "text", text: JSON.stringify(document, null, 2) }]
-        };
+        return toToolResult({ document }, document);
       } catch (error) {
         return toToolError(error);
       }
@@ -98,21 +68,15 @@ export function registerKcscTools(server: McpServer): void {
     {
       title: "Search KDS and KCS Together",
       description: "Search KDS design standards and KCS construction specifications in parallel for the same topic and return separate result sets.",
-      inputSchema: {
-        query: z.string().min(1).describe("Natural-language topic, e.g. 터널 방수 or 되메우기 다짐."),
-        project_type: projectTypeSchema.optional().describe("Optional project preset applied to both KDS and KCS searches."),
-        work_type: workTypeSchema.optional().describe("Optional work-type ranking heuristic applied to both KDS and KCS searches."),
-        limit: z.number().int().min(1).max(50).optional().describe("Maximum result count per standard type. Defaults to 10.")
-      },
+      inputSchema: searchStandardDualInputSchema,
+      outputSchema: dualOutputSchema,
       annotations: { readOnlyHint: true }
     },
     async (input) => {
       try {
-        const service = createService();
-        const results = await service.searchStandardDual(toSearchInput(input));
-        return {
-          content: [{ type: "text", text: JSON.stringify(results, null, 2) }]
-        };
+        const service = getStandardsService(dependencies);
+        const result = await service.searchStandardDual(toSearchInput(input));
+        return toToolResult({ result }, result);
       } catch (error) {
         return toToolError(error);
       }
@@ -124,25 +88,16 @@ export function registerKcscTools(server: McpServer): void {
     {
       title: "Find Clause Evidence",
       description: "Find clause-level evidence from KCSC CodeViewer contents for a natural-language query.",
-      inputSchema: {
-        query: z.string().min(1).describe("Natural-language clause query, e.g. 되메우기 다짐 기준."),
-        standard_code: z.string().optional().describe("Optional exact standard code to search within, e.g. KCS 11 20 15."),
-        standard_type: standardTypeSchema.optional().describe("Optional standards scope for candidate search."),
-        specialty_type: specialtyTypeSchema.optional().describe("Optional specialty standard family filter."),
-        project_type: projectTypeSchema.optional().describe("Optional project preset."),
-        work_type: workTypeSchema.optional().describe("Optional work-type ranking heuristic."),
-        limit: z.number().int().min(1).max(20).optional().describe("Maximum clause evidence count. Defaults to 10.")
-      },
+      inputSchema: findClauseInputSchema,
+      outputSchema: clausesOutputSchema,
       annotations: { readOnlyHint: true }
     },
     async (input) => {
       try {
-        const service = createService();
+        const service = getStandardsService(dependencies);
         const finder = new ClauseFinder(service);
         const clauses = await finder.findClause({ ...toSearchInput(input), ...(input.standard_code ? { standardCode: input.standard_code } : {}) });
-        return {
-          content: [{ type: "text", text: JSON.stringify({ clauses }, null, 2) }]
-        };
+        return toToolResult({ clauses });
       } catch (error) {
         return toToolError(error);
       }
@@ -154,18 +109,15 @@ export function registerKcscTools(server: McpServer): void {
     {
       title: "Latest Standard Check",
       description: "Check whether a standard code exists in current KCSC CodeList metadata. This does not determine project contractual applicability.",
-      inputSchema: {
-        code: z.string().min(1).describe("Standard code such as KDS 11 10 05 or KCS571005.")
-      },
+      inputSchema: latestCheckInputSchema,
+      outputSchema: latestOutputSchema,
       annotations: { readOnlyHint: true }
     },
     async ({ code }) => {
       try {
-        const service = createService();
+        const service = getStandardsService(dependencies);
         const result = await service.latestCheck(code);
-        return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
-        };
+        return toToolResult({ result }, result);
       } catch (error) {
         return toToolError(error);
       }
@@ -177,17 +129,13 @@ export function registerKcscTools(server: McpServer): void {
     {
       title: "Check Standard Applicability",
       description: "Advisory check for whether a standard may apply to a project/work context. This does not determine contractual applicability.",
-      inputSchema: {
-        code: z.string().min(1).describe("Standard code such as KDS 11 10 05 or KCS571005."),
-        project_type: projectTypeSchema.optional().describe("Optional project type to check against."),
-        work_type: workTypeSchema.optional().describe("Optional work type to check against."),
-        specialty_type: specialtyTypeSchema.optional().describe("Optional specialty standard family context.")
-      },
+      inputSchema: checkApplicabilityInputSchema,
+      outputSchema: applicabilityOutputSchema,
       annotations: { readOnlyHint: true }
     },
     async ({ code, project_type, work_type, specialty_type }) => {
       try {
-        const service = createService();
+        const service = getStandardsService(dependencies);
         const checker = new ApplicabilityChecker(service);
         const result = await checker.check({
           standardCode: code,
@@ -195,9 +143,7 @@ export function registerKcscTools(server: McpServer): void {
           ...(work_type ? { workType: work_type } : {}),
           ...(specialty_type ? { specialtyType: specialty_type } : {})
         });
-        return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
-        };
+        return toToolResult({ result }, result);
       } catch (error) {
         return toToolError(error);
       }
@@ -209,54 +155,19 @@ export function registerKcscTools(server: McpServer): void {
     {
       title: "Verify Standard Citations",
       description: "Extract and verify KDS/KCS/specialty standard code citations from text against current KCSC CodeList metadata.",
-      inputSchema: {
-        text: z.string().min(1).describe("Text or Markdown content containing possible standard citations.")
-      },
+      inputSchema: verifyCitationInputSchema,
+      outputSchema: citationsOutputSchema,
       annotations: { readOnlyHint: true }
     },
     async ({ text }) => {
       try {
-        const config = loadConfig();
-        const client = new KcscClient({ apiKey: config.kcscApiKey });
+        const client = getKcscClient(dependencies);
         const metadata = await client.fetchCodeList();
-        const verifications = verifyCitations(text, metadata);
-        return {
-          content: [{ type: "text", text: JSON.stringify({ citations: verifications }, null, 2) }]
-        };
+        const citations = verifyCitations(text, metadata);
+        return toToolResult({ citations });
       } catch (error) {
         return toToolError(error);
       }
     }
   );
-}
-
-function createService(): StandardsService {
-  const config = loadConfig();
-  return new StandardsService(new KcscClient({ apiKey: config.kcscApiKey }));
-}
-
-function toSearchInput(input: {
-  readonly query: string;
-  readonly standard_type?: SearchStandardInput["standardType"];
-  readonly specialty_type?: SearchStandardInput["specialtyType"];
-  readonly project_type?: SearchStandardInput["projectType"];
-  readonly work_type?: SearchStandardInput["workType"];
-  readonly limit?: number | undefined;
-  readonly standard_code?: string | undefined;
-}): SearchStandardInput {
-  return {
-    query: input.query,
-    ...(input.standard_type ? { standardType: input.standard_type } : {}),
-    ...(input.specialty_type ? { specialtyType: input.specialty_type } : {}),
-    ...(input.project_type ? { projectType: input.project_type } : {}),
-    ...(input.work_type ? { workType: input.work_type } : {}),
-    ...(input.limit ? { limit: input.limit } : {})
-  };
-}
-
-function toToolError(error: unknown): { content: Array<{ type: "text"; text: string }>; isError: true } {
-  return {
-    content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-    isError: true
-  };
 }

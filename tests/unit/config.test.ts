@@ -10,6 +10,12 @@ describe("config", () => {
     expect(loadConfig({ SERVICE_KEY: "legacy123" }).kcscApiKey).toBe("legacy123");
   });
 
+  it("prioritizes canonical and legacy API keys in order", () => {
+    expect(loadConfig({ KCSC_API_KEY: " canonical ", KCSC_OPENAPI_KEY: "openapi", KCSC_SERVICE_KEY: "service", SERVICE_KEY: "legacy" }).kcscApiKey).toBe("canonical");
+    expect(loadConfig({ KCSC_OPENAPI_KEY: "openapi", KCSC_SERVICE_KEY: "service", SERVICE_KEY: "legacy" }).kcscApiKey).toBe("openapi");
+    expect(loadConfig({ KCSC_SERVICE_KEY: "service", SERVICE_KEY: "legacy" }).kcscApiKey).toBe("service");
+  });
+
   it("throws actionable missing key error", () => {
     expect(() => loadConfig({})).toThrow("KCSC_API_KEY");
   });
