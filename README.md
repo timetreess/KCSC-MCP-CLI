@@ -1,6 +1,6 @@
 # KCSC Standards MCP/CLI
 
-> AI가 건설기준을 감으로 답하지 않게 만드는 도구.
+> AI가 건설기준을 추측하지 않고, 근거로 답하게 만드는 도구.
 
 KCSC Standards MCP/CLI는 국가건설기준센터(KCSC)의 `KDS`, `KCS`, 전문시방서 정보를 AI 에이전트가 직접 찾아보게 해주는 MCP/CLI 도구입니다.
 
