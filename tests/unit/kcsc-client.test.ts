@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { KcscClient, parseCodeListResponse, parseCodeViewerResponse, type FetchLike } from "../../src/api/kcsc-client.js";
+import { KcscClient, KcscClientError, parseCodeListResponse, parseCodeViewerResponse, type FetchLike } from "../../src/api/kcsc-client.js";
+import { toToolError } from "../../src/mcp/handlers.js";
 import { codeListFixture, kdsViewerFixture } from "../fixtures/kcsc-fixtures.js";
 
 describe("KcscClient", () => {
@@ -59,5 +60,28 @@ describe("KcscClient", () => {
     await expect(jsonClient.fetchCodeList()).rejects.toThrow("invalid JSON");
     expect(jsonClient.toString()).toContain("REDACTED");
     expect(jsonClient.toString()).not.toContain("test-secret");
+  });
+
+  it.each(["transport", "http", "json"])("keeps echoed credentials out of %s errors and MCP output", async (stage) => {
+    const apiKey = "fixture+secret/value=";
+    const fetchFn: FetchLike = async (url) => {
+      const detail = `${url} echoed ${apiKey}`;
+      if (stage === "transport") {
+        throw new Error(detail);
+      }
+      return {
+        ok: stage !== "http",
+        status: stage === "http" ? 403 : 200,
+        statusText: detail,
+        json: async () => { throw new SyntaxError(detail); }
+      };
+    };
+    const client = new KcscClient({ apiKey, fetchFn });
+    const error: unknown = await client.fetchCodeList().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(KcscClientError);
+    const output = `${error instanceof Error ? error.stack : String(error)} ${JSON.stringify(toToolError(error))}`;
+    expect(output).not.toContain(apiKey);
+    expect(output).not.toContain(encodeURIComponent(apiKey));
+    expect(output).toContain(stage === "http" ? "HTTP 403" : stage === "json" ? "invalid JSON" : "request failed");
   });
 });
