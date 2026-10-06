@@ -60,14 +60,21 @@ export class KcscClient {
   }
 
   private async getJson(url: string): Promise<unknown> {
-    const response = await this.fetchFn(url);
+    let response: FetchResponseLike;
+    try {
+      response = await this.fetchFn(url);
+    } catch {
+      // Transport errors can include the authenticated URL. Keep them private.
+      throw new KcscClientError("KCSC OpenAPI request failed: network error.");
+    }
     if (!response.ok) {
-      throw new KcscClientError(`KCSC OpenAPI request failed: HTTP ${response.status} ${response.statusText}`);
+      throw new KcscClientError(`KCSC OpenAPI request failed: HTTP ${response.status}`);
     }
     try {
       return await response.json();
-    } catch (error) {
-      throw new KcscClientError(`KCSC OpenAPI returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    } catch {
+      // Parser diagnostics can echo response content containing the API key.
+      throw new KcscClientError("KCSC OpenAPI returned invalid JSON.");
     }
   }
 }

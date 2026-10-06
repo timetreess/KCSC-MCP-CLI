@@ -84,4 +84,13 @@ describe("runCli", () => {
     await expect(runCli(["get", "KDS 99 99 99"], missing.io, { createService: () => serviceWith(async () => ({ ok: true, status: 200, statusText: "OK", json: async () => emptyViewerFixture })) })).resolves.toBe(1);
     expect(missing.stderr()).toContain("KCSC returned no document");
   });
+
+  it("does not print the authenticated URL from a transport failure", async () => {
+    const { io, stdout, stderr } = captureIo();
+    const service = serviceWith(async (url) => { throw new Error(`Cannot fetch ${url}`); });
+    await expect(runCli(["search", "fixture"], io, { createService: () => service })).resolves.toBe(1);
+    expect(stdout()).toBe("");
+    expect(stderr()).toContain("request failed");
+    expect(stderr()).not.toContain("test-secret");
+  });
 });
