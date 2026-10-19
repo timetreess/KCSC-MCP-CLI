@@ -14,6 +14,7 @@ const server = new McpServer(
       "Call search_standard before get_standard when the user provides a topic rather than an exact code.",
       "Call search_standard_dual when design-standard and construction-specification evidence should be reviewed side by side.",
       "Call get_standard before making citation claims.",
+      "When find_clause returns failures, explain that evidence is incomplete; do not treat it as an exhaustive negative search.",
       "Call verify_citation for generated reports or Markdown documents that include KDS/KCS/specialty standard citations.",
       "Include source URL, revision/update date, and confidence level in answers.",
       "Use check_applicability only as advisory guidance and separate national hierarchy from contract-document priority.",

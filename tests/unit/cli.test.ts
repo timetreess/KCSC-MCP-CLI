@@ -84,4 +84,24 @@ describe("runCli", () => {
     await expect(runCli(["get", "KDS 99 99 99"], missing.io, { createService: () => serviceWith(async () => ({ ok: true, status: 200, statusText: "OK", json: async () => emptyViewerFixture })) })).resolves.toBe(1);
     expect(missing.stderr()).toContain("KCSC returned no document");
   });
+
+  it.each([false, true])("distinguishes partial and total clause retrieval failures (all failed: %s)", async (allFailed) => {
+    const { io, stdout, stderr } = captureIo();
+    const service = serviceWith(async (url) => {
+      const ok = url.includes("CodeList") || (!allFailed && url.includes("/KDS/"));
+      return { ok, status: ok ? 200 : 503, statusText: ok ? "OK" : "Service Unavailable", json: async () => url.includes("CodeList") ? codeListFixture : kdsViewerFixture };
+    });
+    const exitCode = await runCli(["clause", "공통 지반"], io, { createService: () => service });
+    expect(exitCode).toBe(allFailed ? 1 : 0);
+    if (allFailed) {
+      expect(stdout()).toBe("");
+      expect(stderr()).toContain("all candidate");
+      expect(stderr()).toContain("HTTP 503");
+    } else {
+      expect(stdout()).toContain("불완전한 검색 결과");
+      expect(stdout()).toContain("지반설계");
+      expect(stderr()).toContain("KCS 57 10 05");
+      expect(stderr()).toContain("HTTP 503");
+    }
+  });
 });

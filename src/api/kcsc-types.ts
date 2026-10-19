@@ -138,6 +138,16 @@ export interface ClauseEvidence {
   readonly score: number;
 }
 
+export interface ClauseRetrievalFailure {
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface ClauseSearchResult {
+  readonly clauses: readonly ClauseEvidence[];
+  readonly failures: readonly ClauseRetrievalFailure[];
+}
+
 export interface LatestCheckResult {
   readonly inputCode: string;
   readonly exists: boolean;

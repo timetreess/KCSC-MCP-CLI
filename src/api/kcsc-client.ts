@@ -52,7 +52,11 @@ export class KcscClient {
 
   async fetchCodeViewer(type: StandardCodeType | string, code: string): Promise<KcscViewerItem | null> {
     const data = await this.getJson(this.buildCodeViewerUrl(type, code));
-    return parseCodeViewerResponse(data);
+    const item = parseCodeViewerResponse(data);
+    if (item && (item.codeType?.toUpperCase() !== type.toUpperCase() || item.code !== code)) {
+      throw new KcscClientError("KCSC OpenAPI returned a document that does not match the requested standard code.");
+    }
+    return item;
   }
 
   toString(): string {
@@ -62,32 +66,40 @@ export class KcscClient {
   private async getJson(url: string): Promise<unknown> {
     const response = await this.fetchFn(url);
     if (!response.ok) {
-      throw new KcscClientError(`KCSC OpenAPI request failed: HTTP ${response.status} ${response.statusText}`);
+      throw new KcscClientError(`KCSC OpenAPI request failed: HTTP ${response.status}`);
     }
     try {
       return await response.json();
-    } catch (error) {
-      throw new KcscClientError(`KCSC OpenAPI returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    } catch {
+      throw new KcscClientError("KCSC OpenAPI returned invalid JSON.");
     }
   }
 }
 
 export function parseCodeListResponse(data: unknown): readonly KcscListItem[] {
-  if (Array.isArray(data)) {
-    return data.filter(isKcscListItem);
+  const items = responseItems(data, "CodeList");
+  if (!items.every(isKcscListItem)) {
+    throw new KcscClientError("Invalid KCSC CodeList response: malformed metadata item.");
   }
-
-  if (isObject(data) && Array.isArray(data.list)) {
-    return data.list.filter(isKcscListItem);
-  }
-
-  return [];
+  return items;
 }
 
 export function parseCodeViewerResponse(data: unknown): KcscViewerItem | null {
-  const items = Array.isArray(data) ? data : isObject(data) && Array.isArray(data.list) ? data.list : [];
-  const first = items.find(isKcscViewerItem);
-  return first ?? null;
+  const items = responseItems(data, "CodeViewer");
+  if (!items.every(isKcscViewerItem)) {
+    throw new KcscClientError("Invalid KCSC CodeViewer response: malformed document item.");
+  }
+  return items[0] ?? null;
+}
+
+function responseItems(data: unknown, endpoint: "CodeList" | "CodeViewer"): readonly unknown[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+  if (isObject(data) && Array.isArray(data.list)) {
+    return data.list;
+  }
+  throw new KcscClientError(`Invalid KCSC ${endpoint} response: expected an array or an object with a list array.`);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -99,7 +111,7 @@ function isKcscListItem(value: unknown): value is KcscListItem {
     return false;
   }
 
-  return typeof value.codeType === "string" && typeof value.code === "string" && typeof value.name === "string" && isOptionalNumberOrString(value.no) && isOptionalString(value.fullCode) && isOptionalString(value.version) && isOptionalString(value.updateDate) && isOptionalString(value.message) && isOptionalParentCodes(value.listParentCodes);
+  return isNonEmptyString(value.codeType) && isNonEmptyString(value.code) && isNonEmptyString(value.name) && isOptionalNumberOrString(value.no) && isOptionalString(value.fullCode) && isOptionalString(value.version) && isOptionalString(value.updateDate) && isOptionalString(value.message) && isOptionalParentCodes(value.listParentCodes);
 }
 
 function isKcscViewerItem(value: unknown): value is KcscViewerItem {
@@ -107,7 +119,7 @@ function isKcscViewerItem(value: unknown): value is KcscViewerItem {
     return false;
   }
 
-  return typeof value.codeType === "string" && typeof value.code === "string" && isOptionalNumberOrString(value.no) && isOptionalString(value.fullCode) && isOptionalString(value.name) && isOptionalString(value.version) && isOptionalString(value.updateDate) && isOptionalString(value.message) && (value.list === undefined || value.list === null || (Array.isArray(value.list) && value.list.every(isKcscViewerSection)));
+  return isNonEmptyString(value.codeType) && isNonEmptyString(value.code) && isOptionalNumberOrString(value.no) && isOptionalString(value.fullCode) && isOptionalString(value.name) && isOptionalString(value.version) && isOptionalString(value.updateDate) && isOptionalString(value.message) && (value.list === undefined || value.list === null || (Array.isArray(value.list) && value.list.every(isKcscViewerSection)));
 }
 
 function isKcscViewerSection(value: unknown): value is NonNullable<KcscViewerItem["list"]>[number] {
@@ -116,6 +128,10 @@ function isKcscViewerSection(value: unknown): value is NonNullable<KcscViewerIte
   }
 
   return isOptionalNumberOrString(value.no) && isOptionalNumberOrString(value.sort) && isOptionalString(value.title) && isOptionalNumberOrString(value.level) && isOptionalString(value.label) && isOptionalString(value.contents);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function isOptionalString(value: unknown): value is string | null | undefined {

@@ -20,12 +20,11 @@ describe("KcscClient", () => {
     expect(parsed[0]?.codeType).toBe("KDS");
   });
 
-  it("filters malformed CodeList items", () => {
-    const parsed = parseCodeListResponse({ list: [null, {}, "bad", { codeType: "KDS", code: "111005", name: "지반 설계 일반" }] });
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.code).toBe("111005");
-    expect(parseCodeListResponse(null)).toEqual([]);
-    expect(parseCodeListResponse({ list: "not-an-array" })).toEqual([]);
+  it("rejects malformed CodeList responses instead of silently dropping metadata", () => {
+    for (const data of [null, { message: "Invalid API key" }, { list: "not-an-array" }, { list: [codeListFixture[0], null] }, [{ codeType: "KDS", code: "111005", name: "" }]]) {
+      expect(() => parseCodeListResponse(data)).toThrow("Invalid KCSC CodeList response");
+    }
+    expect(parseCodeListResponse({ list: codeListFixture })).toHaveLength(3);
   });
 
   it("parses CodeViewer array responses", () => {
@@ -34,10 +33,23 @@ describe("KcscClient", () => {
     expect(parsed?.list).toHaveLength(4);
   });
 
-  it("filters malformed CodeViewer responses", () => {
-    expect(parseCodeViewerResponse(null)).toBeNull();
-    expect(parseCodeViewerResponse({ list: [null, {}, { codeType: "KDS", code: "111005", list: [] }] })?.code).toBe("111005");
-    expect(parseCodeViewerResponse({ list: "not-an-array" })).toBeNull();
+  it("rejects malformed CodeViewer responses instead of reporting a missing document", () => {
+    for (const data of [null, { message: "Invalid API key" }, { list: "not-an-array" }, { list: [null, kdsViewerFixture[0]] }, [{ codeType: "KDS", code: "111005", list: [{ contents: 123 }] }]]) {
+      expect(() => parseCodeViewerResponse(data)).toThrow("Invalid KCSC CodeViewer response");
+    }
+    expect(parseCodeViewerResponse({ list: kdsViewerFixture })?.code).toBe("111005");
+  });
+
+  it("accepts genuine empty result arrays", () => {
+    for (const data of [[], { list: [] }]) {
+      expect(parseCodeListResponse(data)).toEqual([]);
+      expect(parseCodeViewerResponse(data)).toBeNull();
+    }
+  });
+
+  it.each([["KCS", "111005"], ["KDS", "571005"]])("rejects a viewer response that does not match requested %s %s", async (type, code) => {
+    const client = new KcscClient({ apiKey: "test-secret", fetchFn: async () => ({ ok: true, status: 200, statusText: "OK", json: async () => kdsViewerFixture }) });
+    await expect(client.fetchCodeViewer(type, code)).rejects.toThrow("does not match the requested standard code");
   });
 
   it("fetches CodeList using injected fetch", async () => {
@@ -59,5 +71,17 @@ describe("KcscClient", () => {
     await expect(jsonClient.fetchCodeList()).rejects.toThrow("invalid JSON");
     expect(jsonClient.toString()).toContain("REDACTED");
     expect(jsonClient.toString()).not.toContain("test-secret");
+  });
+
+  it("does not echo upstream HTTP or JSON error details that may contain the API key", async () => {
+    for (const fetchFn of [
+      async () => ({ ok: false, status: 500, statusText: "test-secret", json: async () => ({}) }),
+      async (url: string) => ({ ok: true, status: 200, statusText: "OK", json: async () => { throw new Error(`Invalid JSON from ${url}`); } })
+    ]) {
+      const client = new KcscClient({ apiKey: "test-secret", fetchFn });
+      const error = await client.fetchCodeList().catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(Error);
+      expect(String(error)).not.toContain("test-secret");
+    }
   });
 });

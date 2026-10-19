@@ -64,8 +64,12 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
     if (parsed.command === "clause") {
       const query = parsed.positional.join(" ").trim();
       const finder = new ClauseFinder(service);
-      const clauses = await finder.findClause({ ...toSearchInput(query, parsed.options), ...(parsed.options.code ? { standardCode: parsed.options.code } : {}) });
-      io.stdout.write(formatClauses(clauses));
+      const result = await finder.findClauseWithDiagnostics({ ...toSearchInput(query, parsed.options), ...(parsed.options.code ? { standardCode: parsed.options.code } : {}) });
+      if (result.failures.length > 0) {
+        io.stdout.write("주의: 일부 후보 기준을 조회하지 못한 불완전한 검색 결과입니다.\n\n");
+        io.stderr.write(`${result.failures.map((failure) => `${failure.code}: ${failure.message}`).join("\n")}\n`);
+      }
+      io.stdout.write(formatClauses(result.clauses));
       return 0;
     }
 

@@ -55,4 +55,65 @@ describe("MCP protocol compatibility", () => {
       await server.close();
     }
   });
+
+  it.each(["empty", "partial", "failed"] as const)("preserves clause retrieval status over MCP: %s", async (scenario) => {
+    const server = new McpServer({ name: "kcsc-standards-mcp", version: "1.0.0" });
+    registerKcscTools(server, {
+      createService: () => serviceWith(async (url) => {
+        const ok = url.includes("CodeList") || (scenario !== "failed" && url.includes("/KDS/"));
+        return { ok, status: ok ? 200 : 503, statusText: ok ? "OK" : "Service Unavailable", json: async () => url.includes("CodeList") ? (scenario === "empty" ? [] : codeListFixture) : kdsViewerFixture };
+      })
+    });
+    const client = new Client({ name: "kcsc-standards-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+    try {
+      const result = await client.callTool({ name: "find_clause", arguments: { query: "공통 지반" } });
+      if (scenario === "failed") {
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toBeUndefined();
+      } else {
+        expect(result.isError).not.toBe(true);
+        if (scenario === "empty") {
+          expect(result.structuredContent).toEqual({ clauses: [], failures: [] });
+        } else {
+          expect(result.structuredContent).toHaveProperty("clauses.0.code", "KDS 11 10 05");
+          expect(result.structuredContent).toHaveProperty("failures.0.code", "KCS 57 10 05");
+        }
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("returns tool errors rather than negative metadata results for malformed upstream responses", async () => {
+    const clientOptions = {
+      apiKey: "test-secret",
+      fetchFn: async () => ({ ok: true, status: 200, statusText: "OK", json: async () => ({ message: "Invalid API key: test-secret" }) })
+    };
+    const server = new McpServer({ name: "kcsc-standards-mcp", version: "1.0.0" });
+    registerKcscTools(server, {
+      createService: () => new StandardsService(new KcscClient(clientOptions)),
+      createClient: () => new KcscClient(clientOptions)
+    });
+    const client = new Client({ name: "kcsc-standards-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+    try {
+      for (const request of [
+        { name: "search_standard", arguments: { query: "지반" } },
+        { name: "latest_check", arguments: { code: "KDS111005" } },
+        { name: "verify_citation", arguments: { text: "KDS111005" } }
+      ]) {
+        const result = await client.callTool(request);
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toBeUndefined();
+        expect(JSON.stringify(result)).not.toContain("test-secret");
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
 });

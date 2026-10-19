@@ -47,7 +47,10 @@ export const verifyCitationInputSchema = z.object({
 export const resultsOutputSchema = z.object({ results: z.array(z.unknown()) });
 export const documentOutputSchema = z.object({ document: z.unknown() });
 export const dualOutputSchema = z.object({ result: z.unknown() });
-export const clausesOutputSchema = z.object({ clauses: z.array(z.unknown()) });
+export const clausesOutputSchema = z.object({
+  clauses: z.array(z.unknown()),
+  failures: z.array(z.object({ code: z.string(), message: z.string() })).describe("Documents that could not be retrieved. A non-empty array means the search is incomplete, even if clauses is empty.")
+});
 export const latestOutputSchema = z.object({ result: z.unknown() });
 export const applicabilityOutputSchema = z.object({ result: z.unknown() });
 export const citationsOutputSchema = z.object({ citations: z.array(z.unknown()) });

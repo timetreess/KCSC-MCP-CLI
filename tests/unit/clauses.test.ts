@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 import { KcscClient, type FetchLike } from "../../src/api/kcsc-client.js";
 import { ClauseFinder, expandTerms, rankDocumentSections } from "../../src/core/clauses.js";
 import { StandardsService } from "../../src/core/standards.js";
-import { kdsViewerFixture } from "../fixtures/kcsc-fixtures.js";
+import { codeListFixture, kdsViewerFixture } from "../fixtures/kcsc-fixtures.js";
 
 function finderWithViewer(): ClauseFinder {
   const fetchFn: FetchLike = async () => ({ ok: true, status: 200, statusText: "OK", json: async () => kdsViewerFixture });
+  return new ClauseFinder(new StandardsService(new KcscClient({ apiKey: "test-secret", fetchFn })));
+}
+
+function finderWithFailures(allFailed = false): ClauseFinder {
+  const fetchFn: FetchLike = async (url) => {
+    const ok = url.includes("CodeList") || (!allFailed && url.includes("/KDS/"));
+    return { ok, status: ok ? 200 : 503, statusText: ok ? "OK" : "Service Unavailable", json: async () => url.includes("CodeList") ? codeListFixture : kdsViewerFixture };
+  };
   return new ClauseFinder(new StandardsService(new KcscClient({ apiKey: "test-secret", fetchFn })));
 }
 
@@ -20,6 +28,31 @@ describe("ClauseFinder", () => {
     expect(clauses[0]?.text).toContain("되메우기");
     expect(clauses[0]?.confidence).toBe("원문 직접 근거");
     expect(clauses[0]?.sectionPath.join(" > ")).toContain("되메우기");
+  });
+
+  it("reports normal empty searches separately from retrieval failures", async () => {
+    const finder = finderWithFailures(true);
+    await expect(finder.findClauseWithDiagnostics({ query: "unmatched-topic" })).resolves.toEqual({ clauses: [], failures: [] });
+    await expect(finder.findClause({ query: "unmatched-topic" })).resolves.toEqual([]);
+  });
+
+  it("fails when every candidate document retrieval fails", async () => {
+    const finder = finderWithFailures(true);
+    await expect(finder.findClause({ query: "지반" })).rejects.toThrow("all candidate");
+    await expect(finder.findClauseWithDiagnostics({ query: "지반" })).rejects.toThrow("all candidate");
+  });
+
+  it("returns partial evidence with failed document diagnostics", async () => {
+    const result = await finderWithFailures().findClauseWithDiagnostics({ query: "공통 지반" });
+    expect(result.clauses[0]?.text).toContain("지반설계");
+    expect(result.failures).toEqual([{ code: "KCS 57 10 05", message: "KCSC OpenAPI request failed: HTTP 503" }]);
+    await expect(finderWithFailures().findClause({ query: "공통 지반" })).rejects.toThrow("incomplete");
+  });
+
+  it("keeps partial failure diagnostics even when successful documents contain no matching clauses", async () => {
+    const result = await finderWithFailures().findClauseWithDiagnostics({ query: "공통" });
+    expect(result.clauses).toEqual([]);
+    expect(result.failures).toHaveLength(1);
   });
 
   it("treats title-only matches as related evidence rather than direct evidence", () => {

@@ -1,5 +1,6 @@
-import type { ClauseEvidence, ConfidenceLabel, FindClauseInput, StandardDocument, StandardSection, StandardSummary } from "../api/kcsc-types.js";
-import { StandardsService } from "./standards.js";
+import type { ClauseEvidence, ClauseRetrievalFailure, ClauseSearchResult, ConfidenceLabel, FindClauseInput, StandardDocument, StandardSection, StandardSummary } from "../api/kcsc-types.js";
+import { KcscClientError } from "../api/kcsc-client.js";
+import { StandardsService, StandardsServiceError } from "./standards.js";
 
 const SYNONYMS: readonly (readonly string[])[] = [
   ["되메우기", "되메움", "backfill", "뒷채움"],
@@ -19,41 +20,65 @@ const SYNONYMS: readonly (readonly string[])[] = [
   ["터널", "라이닝", "지보"]
 ];
 
+export class ClauseSearchError extends Error {
+  constructor(message: string, readonly failures: readonly ClauseRetrievalFailure[]) {
+    super(message);
+    this.name = "ClauseSearchError";
+  }
+}
+
 export class ClauseFinder {
   constructor(private readonly standards: StandardsService) {}
 
   async findClause(input: FindClauseInput): Promise<readonly ClauseEvidence[]> {
+    const result = await this.findClauseWithDiagnostics(input);
+    if (result.failures.length > 0) {
+      throw new ClauseSearchError("Clause search is incomplete. Use findClauseWithDiagnostics to inspect partial results.", result.failures);
+    }
+    return result.clauses;
+  }
+
+  async findClauseWithDiagnostics(input: FindClauseInput): Promise<ClauseSearchResult> {
     const query = input.query.trim();
     if (!query) {
       throw new Error("Clause search query is required.");
     }
 
-    const documents = input.standardCode
-      ? [await this.standards.getStandard(input.standardCode)]
+    const { documents, failures } = input.standardCode
+      ? { documents: [await this.standards.getStandard(input.standardCode)], failures: [] }
       : await this.getCandidateDocuments(input);
 
     const terms = expandTerms(query);
     const evidences = documents.flatMap((document) => rankDocumentSections(document, terms));
 
-    return evidences
+    const clauses = evidences
       .filter((evidence) => evidence.score > 0)
       .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code, "ko"))
       .slice(0, input.limit ?? 10);
+    return { clauses, failures };
   }
 
-  private async getCandidateDocuments(input: FindClauseInput): Promise<readonly StandardDocument[]> {
+  private async getCandidateDocuments(input: FindClauseInput): Promise<{ readonly documents: readonly StandardDocument[]; readonly failures: readonly ClauseRetrievalFailure[] }> {
     const candidates = await this.standards.searchStandard({ ...input, limit: Math.min(input.limit ?? 5, 5) });
     const documents: StandardDocument[] = [];
+    const failures: ClauseRetrievalFailure[] = [];
 
     for (const candidate of candidates) {
       try {
         documents.push(await this.standards.getStandard(candidate.code));
-      } catch {
-        // Candidate metadata can exist even when detail fetch fails; skip and keep searching.
+      } catch (error) {
+        if (!(error instanceof KcscClientError) && !(error instanceof StandardsServiceError)) {
+          throw error;
+        }
+        failures.push({ code: candidate.code, message: error.message });
       }
     }
 
-    return documents;
+    if (candidates.length > 0 && documents.length === 0) {
+      const details = failures.map((failure) => `${failure.code}: ${failure.message}`).join("; ");
+      throw new ClauseSearchError(`KCSC detail retrieval failed for all candidate standards. ${details}`, failures);
+    }
+    return { documents, failures };
   }
 }
 

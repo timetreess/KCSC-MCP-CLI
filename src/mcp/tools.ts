@@ -87,7 +87,7 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
     "find_clause",
     {
       title: "Find Clause Evidence",
-      description: "Find clause-level evidence from KCSC CodeViewer contents for a natural-language query.",
+      description: "Find clause-level evidence from KCSC CodeViewer contents for a natural-language query. Check failures for skipped documents: partial results must not be treated as an exhaustive search.",
       inputSchema: findClauseInputSchema,
       outputSchema: clausesOutputSchema,
       annotations: { readOnlyHint: true }
@@ -96,8 +96,8 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
       try {
         const service = getStandardsService(dependencies);
         const finder = new ClauseFinder(service);
-        const clauses = await finder.findClause({ ...toSearchInput(input), ...(input.standard_code ? { standardCode: input.standard_code } : {}) });
-        return toToolResult({ clauses });
+        const result = await finder.findClauseWithDiagnostics({ ...toSearchInput(input), ...(input.standard_code ? { standardCode: input.standard_code } : {}) });
+        return toToolResult({ clauses: result.clauses, failures: result.failures });
       } catch (error) {
         return toToolError(error);
       }
