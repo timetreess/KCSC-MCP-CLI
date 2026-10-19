@@ -19,9 +19,16 @@ Set `KCSC_API_KEY` in `.env` for live API usage. Unit tests use fixtures and do 
 npm run typecheck
 npm test
 npm run build
+npm run verify:package
 ```
 
-Run all three before opening a pull request.
+Run all four before opening a pull request. `verify:package` packs the tarball, installs it into a
+throwaway directory, and runs the shipped `kcsc` CLI and `kcsc-mcp` stdio server. It needs no API key
+and sends no request, so it is safe in CI.
+
+When changing MCP tool results, update the output schemas in `src/mcp/schemas.ts` to match. The SDK
+rejects any `structuredContent` that fails its tool's declared schema, so a mismatch breaks the tool
+at runtime rather than silently shipping.
 
 ## Pull Request Guidelines
 

@@ -47,17 +47,18 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "verify:package": "node scripts/verify-package.mjs",
     "dev:cli": "tsx src/cli/index.ts",
     "dev:mcp": "tsx src/mcp/server.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "dotenv": "^17.2.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
-    "tsx": "^4.20.6",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.0.14"
   },
