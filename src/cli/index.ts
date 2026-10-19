@@ -187,7 +187,6 @@ function formatSearchDualResults(results: StandardDualResult): string {
 
 function formatDocument(document: StandardDocument): string {
   const sections = document.sections
-    .slice(0, 30)
     .map((section) => `### ${section.title || section.label}\n- 조항번호: ${section.label}\n${section.text || "내용 없음"}`)
     .join("\n\n");
 
@@ -200,7 +199,9 @@ function formatDocument(document: StandardDocument): string {
     `- 기준코드: ${document.code}`,
     `- 기준명: ${document.name}`,
     `- 개정일: ${document.updateDate ?? document.version ?? "미확인"}`,
+    document.evidenceGaps.length > 0 ? `- 미확인 근거 정보: ${document.evidenceGaps.join(", ")}` : undefined,
     `- 신뢰도: ${document.confidence}`,
+    `- 조항 수: ${document.sections.length}`,
     `- 출처 URL: ${document.sourceUrl}`,
     "",
     sections

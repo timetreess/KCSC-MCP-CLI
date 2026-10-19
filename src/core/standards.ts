@@ -185,12 +185,18 @@ export function toSummary(item: KcscListItem): StandardSummary | null {
 export function toDocument(item: KcscViewerItem, fallbackType: StandardCodeType, fallbackApiCode: string): StandardDocument {
   const codeType = normalizeCodeType(item.codeType) ?? fallbackType;
   const apiCode = typeof item.code === "string" ? item.code : fallbackApiCode;
-  const name = typeof item.name === "string" && item.name.length > 0 ? item.name : formatStandardCode(codeType, apiCode);
+  const reportedName = typeof item.name === "string" && item.name.trim().length > 0 ? item.name : undefined;
+  const name = reportedName ?? formatStandardCode(codeType, apiCode);
   const specialtyType = getSpecialtyType(codeType);
   const sections = [...(item.list ?? [])].map(toSection).sort((a, b) => a.sort - b.sort);
   const fullCode = nullToUndefined(item.fullCode);
   const version = nullToUndefined(item.version);
   const updateDate = nullToUndefined(item.updateDate);
+  const evidenceGaps = [
+    ...(reportedName ? [] : ["기준명"]),
+    ...(version ?? updateDate ? [] : ["개정일/update date"])
+  ];
+  const hasBodyText = sections.some((section) => section.text.length > 0 && section.text !== "내용 없음");
 
   return {
     standardType: standardTypeFromCodeType(codeType),
@@ -205,8 +211,16 @@ export function toDocument(item: KcscViewerItem, fallbackType: StandardCodeType,
     sourceUrl: buildSourceUrl(codeType, apiCode),
     parentPath: [],
     sections,
-    confidence: sections.some((section) => section.text.length > 0 && section.text !== "내용 없음") ? "원문 직접 근거" : "근거 미확인"
+    confidence: documentConfidence(hasBodyText, evidenceGaps.length === 0),
+    evidenceGaps
   };
+}
+
+function documentConfidence(hasBodyText: boolean, provenanceComplete: boolean): ConfidenceLabel {
+  if (!hasBodyText) {
+    return "근거 미확인";
+  }
+  return provenanceComplete ? "원문 직접 근거" : "관련 조항 추론";
 }
 
 function toSection(section: KcscViewerSection): StandardSection {

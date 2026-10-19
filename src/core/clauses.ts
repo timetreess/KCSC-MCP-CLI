@@ -99,11 +99,12 @@ export function expandTerms(query: string): readonly string[] {
 
 export function rankDocumentSections(document: StandardDocument, terms: readonly string[]): readonly ClauseEvidence[] {
   const pathStack: string[] = [];
+  const provenanceComplete = document.evidenceGaps.length === 0;
   return document.sections.map((section) => {
     updatePath(pathStack, section);
     const text = section.text.trim();
     const score = scoreSection(section, pathStack, terms);
-    const confidence = confidenceFor(text, score, hasBodyTerm(text, terms));
+    const confidence = confidenceFor(text, score, hasBodyTerm(text, terms), provenanceComplete);
 
     return {
       standardType: document.standardType,
@@ -149,8 +150,8 @@ function scoreSection(section: StandardSection, path: readonly string[], terms: 
   return score;
 }
 
-function confidenceFor(text: string, score: number, bodyMatched: boolean): ConfidenceLabel {
-  if (score > 0 && bodyMatched && text.length > 0 && text !== "내용 없음") {
+function confidenceFor(text: string, score: number, bodyMatched: boolean, provenanceComplete: boolean): ConfidenceLabel {
+  if (score > 0 && bodyMatched && text.length > 0 && text !== "내용 없음" && provenanceComplete) {
     return "원문 직접 근거";
   }
   if (score > 0) {

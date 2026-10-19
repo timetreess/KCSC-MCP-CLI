@@ -66,6 +66,26 @@ describe("ClauseFinder", () => {
         sourceUrl: "https://kcsc.re.kr/OpenApi/CodeViewer/KDS/111005",
         parentPath: [],
         confidence: "근거 미확인",
+        evidenceGaps: [],
+        sections: [{ sort: 1, title: "4.5 되메우기", level: 2, label: "4.5", html: "<p>재료 기준</p>", text: "재료 기준" }]
+      },
+      ["되메우기"]
+    );
+    expect(clauses[0]?.confidence).toBe("관련 조항 추론");
+  });
+
+  it("does not claim direct evidence when the source document lacks provenance", () => {
+    const clauses = rankDocumentSections(
+      {
+        standardType: "KDS",
+        codeType: "KDS",
+        code: "KDS 11 10 05",
+        apiCode: "111005",
+        name: "KDS 11 10 05",
+        sourceUrl: "https://kcsc.re.kr/OpenApi/CodeViewer/KDS/111005",
+        parentPath: [],
+        confidence: "관련 조항 추론",
+        evidenceGaps: ["기준명", "개정일/update date"],
         sections: [{ sort: 1, title: "4.5 되메우기", level: 2, label: "4.5", html: "<p>재료 기준</p>", text: "재료 기준" }]
       },
       ["되메우기"]

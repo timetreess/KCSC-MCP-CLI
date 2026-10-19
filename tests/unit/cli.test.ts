@@ -75,6 +75,24 @@ describe("runCli", () => {
     expect(stdout()).toContain("존재 여부: 확인됨");
   });
 
+  it("prints every section of a long document and reports its size", async () => {
+    const viewer = [{ codeType: "KDS", code: "111005", name: "긴 기준", updateDate: "2026-01-01", list: Array.from({ length: 31 }, (_, index) => ({ sort: index + 1, title: `조항 ${index + 1}`, label: `${index + 1}`, contents: `<p>본문 ${index + 1}</p>` })) }];
+    const { io, stdout, stderr } = captureIo();
+    const exitCode = await runCli(["get", "KDS111005"], io, { createService: () => serviceWith(async () => ({ ok: true, status: 200, statusText: "OK", json: async () => viewer })) });
+    expect(exitCode).toBe(0);
+    expect(stdout()).toContain("- 조항 수: 31");
+    expect(stdout()).toContain("본문 31");
+    expect(stderr()).toBe("");
+  });
+
+  it("shows unverified evidence fields in get output", async () => {
+    const viewer = [{ codeType: "KDS", code: "111005", list: [{ sort: 1, title: "본문", label: "본문", contents: "<p>본문만 있는 응답</p>" }] }];
+    const { io, stdout } = captureIo();
+    await expect(runCli(["get", "KDS111005"], io, { createService: () => serviceWith(async () => ({ ok: true, status: 200, statusText: "OK", json: async () => viewer })) })).resolves.toBe(0);
+    expect(stdout()).toContain("- 미확인 근거 정보: 기준명, 개정일/update date");
+    expect(stdout()).toContain("- 신뢰도: 관련 조항 추론");
+  });
+
   it("returns errors for invalid CLI values and service failures", async () => {
     const invalid = captureIo();
     await expect(runCli(["search", "터널", "--project", "roads"], invalid.io, { createService: fixtureService })).resolves.toBe(1);

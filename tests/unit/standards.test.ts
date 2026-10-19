@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { KcscClient, type FetchLike } from "../../src/api/kcsc-client.js";
-import { StandardsService } from "../../src/core/standards.js";
+import { StandardsService, toDocument } from "../../src/core/standards.js";
 import { codeListFixture, emptyViewerFixture, kdsViewerFixture } from "../fixtures/kcsc-fixtures.js";
 
 function serviceWith(fetchFn: FetchLike): StandardsService {
@@ -37,6 +37,22 @@ describe("StandardsService", () => {
     expect(document.confidence).toBe("원문 직접 근거");
     expect(document.sections[1]?.text).toContain("지반설계");
     expect(document.sections[2]?.text).toContain("표준편차");
+  });
+
+  it("reports missing evidence provenance instead of claiming direct evidence", () => {
+    const incomplete = toDocument({ codeType: "KDS", code: "111005", list: [{ contents: "<p>본문만 있는 응답</p>" }] }, "KDS", "111005");
+    expect(incomplete.confidence).toBe("관련 조항 추론");
+    expect(incomplete.evidenceGaps).toEqual(["기준명", "개정일/update date"]);
+
+    const complete = toDocument(kdsViewerFixture[0]!, "KDS", "111005");
+    expect(complete.confidence).toBe("원문 직접 근거");
+    expect(complete.evidenceGaps).toEqual([]);
+  });
+
+  it("does not add provenance gaps when a document simply has no body text", () => {
+    const empty = toDocument({ codeType: "KDS", code: "111005", name: "지반 설계 일반", version: "2025", list: [] }, "KDS", "111005");
+    expect(empty.confidence).toBe("근거 미확인");
+    expect(empty.evidenceGaps).toEqual([]);
   });
 
   it("returns an actionable error for unknown documents", async () => {

@@ -31,4 +31,16 @@ describe("normalizeHtml", () => {
   it("removes script content", () => {
     expect(normalizeHtml("<script>alert(1)</script><p>본문</p>")).toBe("본문");
   });
+
+  it("preserves superscript and subscript meaning instead of flattening it", () => {
+    expect(normalizeHtml("<p>침투계수 10<sup>-6</sup> cm/s</p>")).toBe("침투계수 10^-6 cm/s");
+    expect(normalizeHtml("<p>단위면적 m<sup>2</sup></p>")).toBe("단위면적 m^2");
+    expect(normalizeHtml("<p>산소 농도 H<sub>2</sub>O</p>")).toBe("산소 농도 H_2O");
+    expect(normalizeHtml("<p>10<sup><b>-6</b></sup></p>")).toBe("10^-6");
+  });
+
+  it("marks image-only content instead of silently dropping it", () => {
+    expect(normalizeHtml('<p>설계식 <img src="f1.png" alt="응력 산정식"></p>')).toBe("설계식 [그림: 응력 산정식]");
+    expect(normalizeHtml('<p><img src="f2.png"></p>')).toBe("[그림]");
+  });
 });

@@ -105,6 +105,7 @@ export interface StandardSection {
 export interface StandardDocument extends Omit<StandardSummary, "reason" | "confidence"> {
   readonly sections: readonly StandardSection[];
   readonly confidence: ConfidenceLabel;
+  readonly evidenceGaps: readonly string[];
 }
 
 export interface SearchStandardInput {

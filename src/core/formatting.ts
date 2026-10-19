@@ -19,6 +19,9 @@ export function normalizeHtml(html: string): string {
     html
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<img\b[^>]*>/gi, toImagePlaceholder)
+      .replace(/<sup\b[^>]*>([\s\S]*?)<\/sup>/gi, (_, content: string) => `^${stripTags(content)}`)
+      .replace(/<sub\b[^>]*>([\s\S]*?)<\/sub>/gi, (_, content: string) => `_${stripTags(content)}`)
       .replace(/<tr[^>]*>/gi, "\n")
       .replace(/<\/tr>/gi, "\n")
       .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
@@ -30,6 +33,16 @@ export function normalizeHtml(html: string): string {
     .map((line) => line.replace(/[ \t]+/g, " ").trim())
     .filter((line) => line.length > 0)
     .join("\n");
+}
+
+function stripTags(html: string): string {
+  return html.replace(/<[^>]+>/g, "");
+}
+
+function toImagePlaceholder(tag: string): string {
+  const alt = /\balt\s*=\s*"([^"]*)"|\balt\s*=\s*'([^']*)'|\balt\s*=\s*([^\s"'>]+)/i.exec(tag);
+  const description = (alt?.[1] ?? alt?.[2] ?? alt?.[3] ?? "").trim();
+  return description.length > 0 ? `[그림: ${description}]` : "[그림]";
 }
 
 export function decodeHtmlEntities(value: string): string {
