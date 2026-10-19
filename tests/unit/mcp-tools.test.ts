@@ -70,4 +70,40 @@ describe("registerKcscTools", () => {
     expect(result?.isError).toBe(true);
     expect(result?.content[0]?.type === "text" ? result.content[0].text : "").toContain("missing key");
   });
+
+  /**
+   * The other tool tests inject dependencies, which production never does: every tool call builds its
+   * own service through the factory. With no injected service the only thing that can collapse two
+   * concurrent metadata reads is the factory reusing one client and that client sharing the request.
+   */
+  it("collapses concurrent tool calls into a single CodeList request", async () => {
+    const previousApiKey = process.env.KCSC_API_KEY;
+    process.env.KCSC_API_KEY = "test-secret";
+    const originalFetch = globalThis.fetch;
+    let codeListCalls = 0;
+    globalThis.fetch = (async (input: unknown) => {
+      if (String(input).includes("CodeList")) {
+        codeListCalls += 1;
+      }
+      return new Response(JSON.stringify(codeListFixture), { status: 200 });
+    }) as typeof globalThis.fetch;
+
+    try {
+      const { registrar, tools } = captureTools();
+      registerKcscTools(registrar);
+      const searchTool = tools.find((tool) => tool.name === "search_standard");
+      await Promise.all([
+        searchTool?.handler({ query: "KDS 11 10 05" }),
+        searchTool?.handler({ query: "KCS 57 10 05" })
+      ]);
+      expect(codeListCalls).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (previousApiKey === undefined) {
+        delete process.env.KCSC_API_KEY;
+      } else {
+        process.env.KCSC_API_KEY = previousApiKey;
+      }
+    }
+  });
 });

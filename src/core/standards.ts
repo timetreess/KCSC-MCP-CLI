@@ -18,7 +18,7 @@ import type {
 } from "../api/kcsc-types.js";
 import { KcscClient, type KcscRequestOptions } from "../api/kcsc-client.js";
 import { formatStandardCode, isSupportedCodeType, parseStandardCode, standardTypeFromCodeType } from "./code-parser.js";
-import { normalizeHtml } from "./formatting.js";
+import { normalizeHtml, tokenizeQuery } from "./formatting.js";
 
 const SPECIALTY_TYPES: readonly SpecialtyType[] = ["EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS"];
 const DEFAULT_LIMIT = 10;
@@ -63,9 +63,6 @@ export class StandardsServiceError extends Error {
 }
 
 export class StandardsService {
-  /** Shares one in-flight CodeList response across concurrent callers. Deliberately not a TTL cache: metadata freshness is the caller's concern. */
-  private metadataRequest: Promise<readonly KcscListItem[]> | undefined;
-
   constructor(private readonly client: KcscClient) {}
 
   async searchStandard(input: SearchStandardInput, options: KcscRequestOptions = {}): Promise<readonly StandardSummary[]> {
@@ -74,23 +71,13 @@ export class StandardsService {
       throw new StandardsServiceError("Search query is required.");
     }
 
-    const metadata = await this.readMetadata(options);
+    const metadata = await this.client.fetchCodeList(options);
     return this.rankSummaries(metadata, input, query);
-  }
-
-  private async readMetadata(options: KcscRequestOptions = {}): Promise<readonly KcscListItem[]> {
-    if (options.signal) {
-      return this.client.fetchCodeList(options);
-    }
-    this.metadataRequest ??= this.client.fetchCodeList().finally(() => {
-      this.metadataRequest = undefined;
-    });
-    return this.metadataRequest;
   }
 
   private rankSummaries(metadata: readonly KcscListItem[], input: SearchStandardInput, query: string): readonly StandardSummary[] {
     const exactCode = parseStandardCode(query);
-    const terms = tokenize(query);
+    const terms = tokenizeQuery(query);
     const projectTerms = input.projectType ? PROJECT_KEYWORDS[input.projectType] : [];
     const workTerms = input.workType ? WORK_KEYWORDS[input.workType] : [];
 
@@ -106,11 +93,14 @@ export class StandardsService {
   }
 
   async searchStandardDual(input: Omit<SearchStandardInput, "standardType" | "specialtyType">): Promise<StandardDualResult> {
-    const metadata = await this.readMetadata();
-    const [kdsResults, kcsResults] = [
-      this.rankSummaries(metadata, { ...input, standardType: "KDS" }, input.query),
-      this.rankSummaries(metadata, { ...input, standardType: "KCS" }, input.query)
-    ];
+    const query = input.query.trim();
+    if (!query) {
+      throw new StandardsServiceError("Search query is required.");
+    }
+
+    const metadata = await this.client.fetchCodeList();
+    const kdsResults = this.rankSummaries(metadata, { ...input, standardType: "KDS" }, query);
+    const kcsResults = this.rankSummaries(metadata, { ...input, standardType: "KCS" }, query);
 
     return {
       query: input.query,
@@ -141,7 +131,7 @@ export class StandardsService {
       throw new StandardsServiceError("Invalid standard code format. Expected forms like KDS 11 10 05 or KCS571005.");
     }
 
-    const metadata = await this.readMetadata();
+    const metadata = await this.client.fetchCodeList();
     const summary = metadata
       .map((item) => toSummary(item))
       .find((candidate) => candidate?.codeType === parsed.type && candidate.apiCode === parsed.apiCode);
@@ -295,7 +285,7 @@ function scoreSummary(
   }
 
   for (const term of queryTerms) {
-    if (haystack.includes(term.toLowerCase())) {
+    if (haystack.includes(term)) {
       score += 10;
       reason.push(`검색어 일치: ${term}`);
     }
@@ -316,14 +306,6 @@ function scoreSummary(
   }
 
   return { summary: { ...summary, reason }, score };
-}
-
-function tokenize(input: string): readonly string[] {
-  return input
-    .replace(/[()\[\]{}"']/g, " ")
-    .split(/[\s,，·/]+/)
-    .map((term) => term.trim())
-    .filter((term) => term.length > 0);
 }
 
 function normalizeCodeType(value: string | null | undefined): StandardCodeType | null {

@@ -14,6 +14,19 @@ const ENTITY_MAP: Readonly<Record<string, string>> = {
   trade: "™"
 };
 
+/**
+ * Splits a user query into comparable search terms. Terms are lowercased so callers can match them
+ * against lowercased text directly; splitting and casing live here so search and clause ranking cannot
+ * drift apart on what counts as one term.
+ */
+export function tokenizeQuery(query: string): readonly string[] {
+  return query
+    .replace(/[()\[\]{}"']/g, " ")
+    .split(/[\s,，·/]+/)
+    .map((term) => term.trim().toLowerCase())
+    .filter((term) => term.length > 0);
+}
+
 export function normalizeHtml(html: string): string {
   return decodeHtmlEntities(
     html

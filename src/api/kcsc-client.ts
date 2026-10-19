@@ -35,6 +35,9 @@ export interface KcscRequestOptions {
 }
 
 export class KcscClient {
+  /** Shares one in-flight CodeList response across concurrent callers. Deliberately not a TTL cache: metadata freshness is the caller's concern. */
+  private codeListRequest: Promise<readonly KcscListItem[]> | undefined;
+
   private readonly apiKey: string;
   private readonly fetchFn: FetchLike;
   private readonly baseUrl: string;
@@ -60,6 +63,18 @@ export class KcscClient {
   }
 
   async fetchCodeList(options: KcscRequestOptions = {}): Promise<readonly KcscListItem[]> {
+    // A caller-supplied signal has to stay cancellable on its own, so it neither joins a shared
+    // request nor gets cancelled by it.
+    if (options.signal) {
+      return this.requestCodeList(options);
+    }
+    this.codeListRequest ??= this.requestCodeList().finally(() => {
+      this.codeListRequest = undefined;
+    });
+    return this.codeListRequest;
+  }
+
+  private async requestCodeList(options: KcscRequestOptions = {}): Promise<readonly KcscListItem[]> {
     const data = await this.getJson(this.buildCodeListUrl(), options);
     return parseCodeListResponse(data);
   }

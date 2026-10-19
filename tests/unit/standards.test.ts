@@ -23,6 +23,11 @@ describe("StandardsService", () => {
     expect(result.caveat).toContain("코드번호의 1:1 대응");
   });
 
+  it("rejects a blank dual query instead of returning unrelated standards as candidates", async () => {
+    const service = serviceWith(async () => ({ ok: true, status: 200, statusText: "OK", json: async () => codeListFixture }));
+    await expect(service.searchStandardDual({ query: "   " })).rejects.toThrow("Search query is required.");
+  });
+
   it("filters specialty families", async () => {
     const service = serviceWith(async () => ({ ok: true, status: 200, statusText: "OK", json: async () => codeListFixture }));
     const results = await service.searchStandard({ query: "포장", standardType: "specialty", specialtyType: "EXCS" });

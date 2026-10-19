@@ -90,6 +90,23 @@ describe("metadata snapshot reuse", () => {
   });
 });
 
+describe("metadata request sharing", () => {
+  it("keeps caller-cancellable metadata reads out of the shared request", async () => {
+    let calls = 0;
+    const client = new KcscClient({
+      apiKey: "test-secret",
+      fetchFn: async () => {
+        calls += 1;
+        return ok(codeListFixture);
+      }
+    });
+    const controller = new AbortController();
+
+    await Promise.all([client.fetchCodeList(), client.fetchCodeList({ signal: controller.signal })]);
+    expect(calls).toBe(2);
+  });
+});
+
 describe("request deadline and cancellation", () => {
   it("aborts a request that exceeds the deadline and reports it as a timeout", async () => {
     const fetchFn: FetchLike = (_url, init) => new Promise((_resolve, reject) => {

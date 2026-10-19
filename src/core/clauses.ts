@@ -1,6 +1,7 @@
 import type { ClauseEvidence, ClauseRetrievalFailure, ClauseSearchResult, ConfidenceLabel, FindClauseInput, StandardDocument, StandardSection, StandardSummary } from "../api/kcsc-types.js";
 import { KcscClientError } from "../api/kcsc-client.js";
 import { StandardsService, StandardsServiceError } from "./standards.js";
+import { tokenizeQuery } from "./formatting.js";
 
 const SYNONYMS: readonly (readonly string[])[] = [
   ["되메우기", "되메움", "backfill", "뒷채움"],
@@ -131,7 +132,7 @@ function unresolvedScopeNote(candidateCodes: readonly string[]): string {
 }
 
 export function expandTerms(query: string): readonly string[] {
-  const baseTerms = tokenize(query);
+  const baseTerms = tokenizeQuery(query);
   const expanded = new Set(baseTerms);
 
   for (const group of SYNONYMS) {
@@ -213,12 +214,4 @@ function confidenceFor(text: string, score: number, bodyMatched: boolean, proven
 function hasBodyTerm(text: string, terms: readonly string[]): boolean {
   const normalized = text.toLowerCase();
   return terms.some((term) => normalized.includes(term));
-}
-
-function tokenize(input: string): readonly string[] {
-  return input
-    .replace(/[()\[\]{}"']/g, " ")
-    .split(/[\s,，·/]+/)
-    .map((term) => term.trim().toLowerCase())
-    .filter((term) => term.length > 0);
 }
