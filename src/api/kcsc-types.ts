@@ -144,9 +144,15 @@ export interface ClauseRetrievalFailure {
   readonly message: string;
 }
 
+export type ClauseSearchScope = "standard" | "candidates" | "unresolved";
+
 export interface ClauseSearchResult {
   readonly clauses: readonly ClauseEvidence[];
   readonly failures: readonly ClauseRetrievalFailure[];
+  /** Which documents were actually searched, so an empty clause list is not read as a negative result. */
+  readonly searchScope: ClauseSearchScope;
+  readonly searchedCodes: readonly string[];
+  readonly scopeNote?: string;
 }
 
 export interface LatestCheckResult {
@@ -187,6 +193,13 @@ export interface CheckApplicabilityInput {
   readonly specialtyType?: SpecialtyTypeFilter;
 }
 
+export interface ApplicabilityEvidence {
+  readonly category: ProjectType | WorkType;
+  readonly keyword: string;
+  readonly location: "code" | "name" | "parentPath" | "sectionTitle" | "sectionLabel" | "sectionText";
+  readonly sectionLabel?: string;
+}
+
 export interface ApplicabilityResult {
   readonly standard: StandardSummary;
   readonly requestedProjectType?: ProjectType;
@@ -195,6 +208,7 @@ export interface ApplicabilityResult {
   readonly workMatched: boolean;
   readonly matchedProjects: readonly ProjectType[];
   readonly matchedWorks: readonly WorkType[];
+  readonly evidence: readonly ApplicabilityEvidence[];
   readonly reasoning: readonly string[];
   readonly recommendation: string;
   readonly caveat: string;

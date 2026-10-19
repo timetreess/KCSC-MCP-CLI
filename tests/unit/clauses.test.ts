@@ -32,8 +32,18 @@ describe("ClauseFinder", () => {
 
   it("reports normal empty searches separately from retrieval failures", async () => {
     const finder = finderWithFailures(true);
-    await expect(finder.findClauseWithDiagnostics({ query: "unmatched-topic" })).resolves.toEqual({ clauses: [], failures: [] });
+    const result = await finder.findClauseWithDiagnostics({ query: "unmatched-topic" });
+    expect(result.clauses).toEqual([]);
+    expect(result.failures).toEqual([]);
+    expect(result.searchScope).toBe("unresolved");
     await expect(finder.findClause({ query: "unmatched-topic" })).resolves.toEqual([]);
+  });
+
+  it("searches the resolved candidate bodies even when no clause matches", async () => {
+    const result = await finderWithViewer().findClauseWithDiagnostics({ query: "지반 설계기준 일반사항" });
+    expect(result.searchScope).toBe("candidates");
+    expect(result.searchedCodes).toEqual(["KDS 11 10 05"]);
+    expect(result.scopeNote).toBeUndefined();
   });
 
   it("fails when every candidate document retrieval fails", async () => {
@@ -53,6 +63,40 @@ describe("ClauseFinder", () => {
     const result = await finderWithFailures().findClauseWithDiagnostics({ query: "공통" });
     expect(result.clauses).toEqual([]);
     expect(result.failures).toHaveLength(1);
+  });
+
+  it("reports an unresolved scope instead of implying the body was searched", async () => {
+    const result = await finderWithViewer().findClauseWithDiagnostics({ query: "되메우기 다짐" });
+    expect(result.searchScope).toBe("unresolved");
+    expect(result.clauses).toEqual([]);
+    expect(result.searchedCodes).toEqual([]);
+    expect(result.scopeNote).toContain("근거가 없다는 뜻이 아닙니다");
+  });
+
+  it("reports a resolved search scope when a code is supplied", async () => {
+    const result = await finderWithViewer().findClauseWithDiagnostics({ query: "되메우기 다짐", standardCode: "KDS111005" });
+    expect(result.searchScope).toBe("standard");
+    expect(result.scopeNote).toBeUndefined();
+    expect(result.clauses[0]?.text).toContain("되메우기");
+  });
+
+  it("resolves candidates and searches their bodies when metadata matches", async () => {
+    const result = await finderWithViewer().findClauseWithDiagnostics({ query: "지반 설계" });
+    expect(result.searchScope).toBe("candidates");
+    expect(result.clauses[0]?.text).toContain("지반설계");
+  });
+
+  it("uses expanded terms to discover candidates with translated titles", async () => {
+    const metadata = [{ codeType: "KCS", code: "213010", name: "Backfill and compaction works", listParentCodes: [{ codeType: "KCS", fullCode: "2021", name: "Earth works" }] }];
+    const viewer = [{ codeType: "KCS", code: "213010", name: "Backfill and compaction works", version: "2022", list: [{ sort: 1, title: "Compaction", label: "본문", contents: "<p>되메우기 다짐은 층별로 수행한다.</p>" }] }];
+    const finder = new ClauseFinder(new StandardsService(new KcscClient({
+      apiKey: "test-secret",
+      fetchFn: async (url) => ({ ok: true, status: 200, statusText: "OK", json: async () => url.includes("CodeList") ? metadata : viewer })
+    })));
+    const result = await finder.findClauseWithDiagnostics({ query: "되메우기 다짐" });
+    expect(result.searchScope).toBe("candidates");
+    expect(result.clauses[0]?.code).toBe("KCS 21 30 10");
+    expect(result.clauses[0]?.text).toContain("되메우기 다짐");
   });
 
   it("treats title-only matches as related evidence rather than direct evidence", () => {

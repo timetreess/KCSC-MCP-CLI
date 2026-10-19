@@ -44,9 +44,9 @@ export class ClauseFinder {
       throw new Error("Clause search query is required.");
     }
 
-    const { documents, failures } = input.standardCode
-      ? { documents: [await this.standards.getStandard(input.standardCode)], failures: [] }
-      : await this.getCandidateDocuments(input);
+    const { documents, failures, candidateCodes } = input.standardCode
+      ? { documents: [await this.standards.getStandard(input.standardCode)], failures: [], candidateCodes: [] }
+      : await this.getCandidateDocuments(input, query);
 
     const terms = expandTerms(query);
     const evidences = documents.flatMap((document) => rankDocumentSections(document, terms));
@@ -55,11 +55,18 @@ export class ClauseFinder {
       .filter((evidence) => evidence.score > 0)
       .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code, "ko"))
       .slice(0, input.limit ?? 10);
-    return { clauses, failures };
+    const searchedCodes = documents.map((document) => document.code);
+    return {
+      clauses,
+      failures,
+      searchScope: input.standardCode ? "standard" : searchedCodes.length > 0 ? "candidates" : "unresolved",
+      searchedCodes,
+      ...(input.standardCode || searchedCodes.length > 0 ? {} : { scopeNote: unresolvedScopeNote(candidateCodes) })
+    };
   }
 
-  private async getCandidateDocuments(input: FindClauseInput): Promise<{ readonly documents: readonly StandardDocument[]; readonly failures: readonly ClauseRetrievalFailure[] }> {
-    const candidates = await this.standards.searchStandard({ ...input, limit: Math.min(input.limit ?? 5, 5) });
+  private async getCandidateDocuments(input: FindClauseInput, query: string): Promise<{ readonly documents: readonly StandardDocument[]; readonly failures: readonly ClauseRetrievalFailure[]; readonly candidateCodes: readonly string[] }> {
+    const candidates = await this.standards.searchStandard({ ...input, query: expandTerms(query).join(" "), limit: Math.min(input.limit ?? 5, 5) });
     const documents: StandardDocument[] = [];
     const failures: ClauseRetrievalFailure[] = [];
 
@@ -78,8 +85,13 @@ export class ClauseFinder {
       const details = failures.map((failure) => `${failure.code}: ${failure.message}`).join("; ");
       throw new ClauseSearchError(`KCSC detail retrieval failed for all candidate standards. ${details}`, failures);
     }
-    return { documents, failures };
+    return { documents, failures, candidateCodes: candidates.map((candidate) => candidate.code) };
   }
+}
+
+function unresolvedScopeNote(candidateCodes: readonly string[]): string {
+  const known = candidateCodes.length > 0 ? `기준번호로 직접 조회가 가능한 후보: ${candidateCodes.join(", ")}.` : "";
+  return `기준번호 없이 후보 기준 본문을 찾지 못했습니다. 본문 표현이 기준명이나 분류경로에 없으면 후보 탐색이 불가능하며, 이는 해당 표현에 근거가 없다는 뜻이 아닙니다. ${known} 검색어 변경이나 기준번호 지정으로 다시 시도하십시오.`;
 }
 
 export function expandTerms(query: string): readonly string[] {

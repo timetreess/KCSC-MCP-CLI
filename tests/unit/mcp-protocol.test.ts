@@ -75,7 +75,8 @@ describe("MCP protocol compatibility", () => {
       } else {
         expect(result.isError).not.toBe(true);
         if (scenario === "empty") {
-          expect(result.structuredContent).toEqual({ clauses: [], failures: [] });
+          expect(result.structuredContent).toMatchObject({ clauses: [], failures: [], searchScope: "unresolved" });
+          expect(result.structuredContent).toHaveProperty("scopeNote");
         } else {
           expect(result.structuredContent).toHaveProperty("clauses.0.code", "KDS 11 10 05");
           expect(result.structuredContent).toHaveProperty("failures.0.code", "KCS 57 10 05");

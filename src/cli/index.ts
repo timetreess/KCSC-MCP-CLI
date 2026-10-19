@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import type { KcscListItem, ApplicabilityResult, ClauseEvidence, CitationVerification, LatestCheckResult, SearchStandardInput, StandardDocument, StandardDualResult, StandardSummary } from "../api/kcsc-types.js";
+import type { KcscListItem, ApplicabilityResult, ClauseEvidence, ClauseSearchScope, CitationVerification, LatestCheckResult, SearchStandardInput, StandardDocument, StandardDualResult, StandardSummary } from "../api/kcsc-types.js";
 import { ApplicabilityChecker } from "../core/applicability.js";
 import { ClauseFinder } from "../core/clauses.js";
 import { verifyCitations } from "../core/citations.js";
@@ -69,7 +69,10 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
         io.stdout.write("주의: 일부 후보 기준을 조회하지 못한 불완전한 검색 결과입니다.\n\n");
         io.stderr.write(`${result.failures.map((failure) => `${failure.code}: ${failure.message}`).join("\n")}\n`);
       }
-      io.stdout.write(formatClauses(result.clauses));
+      if (result.searchScope === "unresolved") {
+        io.stderr.write(`${result.scopeNote ?? ""}\n`);
+      }
+      io.stdout.write(formatClauses(result.clauses, result.searchScope, result.searchedCodes));
       return 0;
     }
 
@@ -208,9 +211,13 @@ function formatDocument(document: StandardDocument): string {
   ].filter((line): line is string => typeof line === "string").join("\n");
 }
 
-function formatClauses(clauses: readonly ClauseEvidence[]): string {
+function formatClauses(clauses: readonly ClauseEvidence[], searchScope: ClauseSearchScope, searchedCodes: readonly string[]): string {
   if (clauses.length === 0) {
-    return "현재 검색 범위에서 직접 조항 근거를 확인하지 못했습니다. 계약문서·특기시방서·추가 기준 확인이 필요합니다.\n";
+    if (searchScope === "unresolved") {
+      return "기준번호 없이 후보 기준 본문을 검색하지 못했습니다. 위 안내에 따라 검색어나 기준번호를 지정해 다시 조회하십시오.\n";
+    }
+    const scope = searchedCodes.length > 0 ? `확인한 기준: ${searchedCodes.join(", ")}.` : "";
+    return `확인한 기준 원문 범위에서 직접 조항 근거를 찾지 못했습니다. ${scope} 이는 해당 범위에 근거가 없다는 뜻이며, 기준 전체의 부존재를 의미하지 않습니다.\n`;
   }
 
   return `${clauses.map((clause, index) => [
@@ -254,6 +261,7 @@ function formatApplicability(result: ApplicabilityResult): string {
     `- 적용성 판단: ${result.recommendation}`,
     `- 신뢰도: ${result.confidence}`,
     result.reasoning.length > 0 ? `- 판단 근거: ${result.reasoning.join(" / ")}` : undefined,
+    result.evidence.length > 0 ? `- 확인된 키워드 근거: ${result.evidence.map((item) => `${item.category}/${item.keyword} (${item.location}${item.sectionLabel ? ` ${item.sectionLabel}` : ""})`).join(", ")}` : undefined,
     `- 주의사항: ${result.caveat}`,
     `- 출처 URL: ${result.standard.sourceUrl}`
   ].filter((line): line is string => typeof line === "string").join("\n") + "\n";

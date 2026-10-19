@@ -49,7 +49,10 @@ export const documentOutputSchema = z.object({ document: z.unknown() });
 export const dualOutputSchema = z.object({ result: z.unknown() });
 export const clausesOutputSchema = z.object({
   clauses: z.array(z.unknown()),
-  failures: z.array(z.object({ code: z.string(), message: z.string() })).describe("Documents that could not be retrieved. A non-empty array means the search is incomplete, even if clauses is empty.")
+  failures: z.array(z.object({ code: z.string(), message: z.string() })).describe("Documents that could not be retrieved. A non-empty array means the search is incomplete, even if clauses is empty."),
+  searchScope: z.enum(["standard", "candidates", "unresolved"]).describe("Which documents were searched. 'unresolved' means no candidate body was searched at all, so an empty clauses list is not a negative finding."),
+  searchedCodes: z.array(z.string()),
+  scopeNote: z.string().optional()
 });
 export const latestOutputSchema = z.object({ result: z.unknown() });
 export const applicabilityOutputSchema = z.object({ result: z.unknown() });

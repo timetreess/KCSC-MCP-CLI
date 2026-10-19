@@ -1,4 +1,4 @@
-import { PROJECT_TYPES, WORK_TYPES, type ApplicabilityResult, type CheckApplicabilityInput, type ConfidenceLabel, type ProjectType, type StandardDocument, type StandardSummary, type WorkType } from "../api/kcsc-types.js";
+import { PROJECT_TYPES, WORK_TYPES, type ApplicabilityEvidence, type ApplicabilityResult, type CheckApplicabilityInput, type ConfidenceLabel, type ProjectType, type StandardDocument, type StandardSummary, type WorkType } from "../api/kcsc-types.js";
 import { PROJECT_KEYWORDS, StandardsService, WORK_KEYWORDS } from "./standards.js";
 
 const APPLICABILITY_CAVEAT =
@@ -9,12 +9,12 @@ export class ApplicabilityChecker {
 
   async check(input: CheckApplicabilityInput): Promise<ApplicabilityResult> {
     const document = await this.standards.getStandard(input.standardCode);
-    const searchableText = buildSearchableText(document);
-    const matchedProjects = PROJECT_TYPES.filter((project) => matchesAny(searchableText, PROJECT_KEYWORDS[project]));
-    const matchedWorks = WORK_TYPES.filter((work) => matchesAny(searchableText, WORK_KEYWORDS[work]));
+    const evidence = collectEvidence(document);
+    const matchedProjects = uniqueCategories(evidence.filter((item) => isProjectCategory(item.category)).map((item) => item.category as ProjectType));
+    const matchedWorks = uniqueCategories(evidence.filter((item) => !isProjectCategory(item.category)).map((item) => item.category as WorkType));
     const projectMatched = input.projectType ? matchedProjects.includes(input.projectType) : matchedProjects.length > 0;
     const workMatched = input.workType ? matchedWorks.includes(input.workType) : matchedWorks.length > 0;
-    const reasoning = buildReasoning(input, matchedProjects, matchedWorks);
+    const reasoning = buildReasoning(input, matchedProjects, matchedWorks, evidence);
     const confidence = confidenceFor(input, projectMatched, workMatched, reasoning);
 
     return {
@@ -25,6 +25,7 @@ export class ApplicabilityChecker {
       workMatched,
       matchedProjects,
       matchedWorks,
+      evidence,
       reasoning,
       recommendation: buildRecommendation(input, projectMatched, workMatched, matchedProjects, matchedWorks),
       caveat: APPLICABILITY_CAVEAT,
@@ -33,36 +34,67 @@ export class ApplicabilityChecker {
   }
 }
 
-function buildSearchableText(document: StandardDocument): string {
-  return [document.code, document.name, ...document.parentPath, ...document.sections.flatMap((section) => [section.title, section.label, section.text])]
-    .join(" ")
-    .toLowerCase();
+function isProjectCategory(category: ProjectType | WorkType): category is ProjectType {
+  return (PROJECT_TYPES as readonly string[]).includes(category);
 }
 
-function matchesAny(text: string, keywords: readonly string[]): boolean {
-  return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+function uniqueCategories<T extends string>(categories: readonly T[]): readonly T[] {
+  return [...new Set(categories)];
 }
 
-function buildReasoning(input: CheckApplicabilityInput, matchedProjects: readonly ProjectType[], matchedWorks: readonly WorkType[]): readonly string[] {
+function collectEvidence(document: StandardDocument): readonly ApplicabilityEvidence[] {
+  const located: { readonly text: string; readonly location: ApplicabilityEvidence["location"]; readonly sectionLabel?: string }[] = [
+    { text: document.code, location: "code" },
+    { text: document.name, location: "name" },
+    ...document.parentPath.map((entry) => ({ text: entry, location: "parentPath" as const })),
+    ...document.sections.flatMap((section) => [
+      { text: section.title, location: "sectionTitle" as const, sectionLabel: section.label },
+      { text: section.label, location: "sectionLabel" as const, sectionLabel: section.label },
+      { text: section.text, location: "sectionText" as const, sectionLabel: section.label }
+    ])
+  ];
+
+  const evidence: ApplicabilityEvidence[] = [];
+  const categories: readonly (readonly [ProjectType | WorkType, readonly string[]])[] = [
+    ...PROJECT_TYPES.map((project): readonly [ProjectType | WorkType, readonly string[]] => [project, PROJECT_KEYWORDS[project]]),
+    ...WORK_TYPES.map((work): readonly [ProjectType | WorkType, readonly string[]] => [work, WORK_KEYWORDS[work]])
+  ];
+  for (const [category, keywords] of categories) {
+    for (const keyword of keywords) {
+      const hit = located.find((field) => field.text.toLowerCase().includes(keyword.toLowerCase()));
+      if (hit) {
+        evidence.push({ category, keyword, location: hit.location, ...(hit.sectionLabel ? { sectionLabel: hit.sectionLabel } : {}) });
+      }
+    }
+  }
+  return evidence;
+}
+
+function buildReasoning(input: CheckApplicabilityInput, matchedProjects: readonly ProjectType[], matchedWorks: readonly WorkType[], evidence: readonly ApplicabilityEvidence[]): readonly string[] {
   const reasons: string[] = [];
+  const cite = (category: ProjectType | WorkType): string => {
+    const hit = evidence.find((item) => item.category === category);
+    return hit ? `${hit.keyword}(${evidenceLocation(hit)})` : "";
+  };
+
   if (input.projectType) {
     reasons.push(
       matchedProjects.includes(input.projectType)
-        ? `요청 프로젝트(${input.projectType}) 관련 키워드가 기준명·목차·본문에서 확인되었습니다.`
+        ? `요청 프로젝트(${input.projectType}) 관련 키워드가 기준 원문에서 확인되었습니다: ${cite(input.projectType)}.`
         : `요청 프로젝트(${input.projectType})와 직접 일치하는 키워드를 현재 기준 원문 범위에서 확인하지 못했습니다.`
     );
   } else if (matchedProjects.length > 0) {
-    reasons.push(`기준명·목차·본문에서 관련 프로젝트 유형 후보가 확인되었습니다: ${matchedProjects.join(", ")}.`);
+    reasons.push(`기준 원문에서 관련 프로젝트 유형 후보가 확인되었습니다: ${matchedProjects.map(cite).join(", ")}.`);
   }
 
   if (input.workType) {
     reasons.push(
       matchedWorks.includes(input.workType)
-        ? `요청 공종(${input.workType}) 관련 키워드가 기준명·목차·본문에서 확인되었습니다.`
+        ? `요청 공종(${input.workType}) 관련 키워드가 기준 원문에서 확인되었습니다: ${cite(input.workType)}.`
         : `요청 공종(${input.workType})와 직접 일치하는 키워드를 현재 기준 원문 범위에서 확인하지 못했습니다.`
     );
   } else if (matchedWorks.length > 0) {
-    reasons.push(`기준명·목차·본문에서 관련 공종 후보가 확인되었습니다: ${matchedWorks.join(", ")}.`);
+    reasons.push(`기준 원문에서 관련 공종 후보가 확인되었습니다: ${matchedWorks.map(cite).join(", ")}.`);
   }
 
   if (reasons.length === 0) {
@@ -70,6 +102,11 @@ function buildReasoning(input: CheckApplicabilityInput, matchedProjects: readonl
   }
 
   return reasons;
+}
+
+function evidenceLocation(evidence: ApplicabilityEvidence): string {
+  const label = evidence.sectionLabel ? ` ${evidence.sectionLabel}` : "";
+  return `${evidence.location}${label}`;
 }
 
 function confidenceFor(input: CheckApplicabilityInput, projectMatched: boolean, workMatched: boolean, reasoning: readonly string[]): ConfidenceLabel {
