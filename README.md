@@ -154,6 +154,7 @@ KCSC 사이트 메뉴나 신청 방식은 바뀔 수 있습니다. 막히면 에
 - 모든 KCSC 요청에 기본 15초 제한시간이 적용됩니다. 제한시간이 지나면 `KCSC OpenAPI request timed out after 15000 ms.` 오류로 보고하며, 요청이 응답 없이 멈추지 않습니다. `KcscClient` 생성 시 `requestTimeoutMs`로 조정할 수 있고, `0`이면 무제한입니다.
 - 제한시간과 호출자 취소는 내부 요청이 abort signal을 무시하는 주입 `fetch`에서도 동작하도록 경합(race) 방식으로 처리합니다.
 - `fetchCodeList`/`fetchCodeViewer`는 `signal`을 받아 MCP 요청 취소와 연결할 수 있습니다. 이미 취소된 요청은 전송 전에 실패합니다.
+- 조항 검색에는 후보 수와 무관한 **전체 작업 기한 30초**가 추가로 적용됩니다. 기한이 지나면 남은 후보를 열람하지 않고 `failures`에 "budget" 사유로 기록하므로, 결과가 불완전하다는 사실이 드러납니다. `new ClauseFinder(service, { totalTimeoutMs })`로 조정하거나 `0`으로 끌 수 있습니다.
 - `search_standard_dual`과 동시 호출은 진행 중인 `CodeList` 응답 하나를 공유해 요청 횟수를 줄입니다. TTL 캐시가 아니므로 순차 호출은 항상 최신 metadata를 조회합니다.
 
 ### MCP 출력 스키마

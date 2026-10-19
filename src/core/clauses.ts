@@ -27,8 +27,22 @@ export class ClauseSearchError extends Error {
   }
 }
 
+export const DEFAULT_CLAUSE_SEARCH_BUDGET_MS = 30_000;
+
+export interface ClauseFinderOptions {
+  /**
+   * Upper bound on the whole clause search, independent of how many candidates are read.
+   * Set to 0 to disable. The per-request deadline still applies to each KCSC call.
+   */
+  readonly totalTimeoutMs?: number;
+}
+
 export class ClauseFinder {
-  constructor(private readonly standards: StandardsService) {}
+  private readonly totalTimeoutMs: number;
+
+  constructor(private readonly standards: StandardsService, options: ClauseFinderOptions = {}) {
+    this.totalTimeoutMs = options.totalTimeoutMs ?? DEFAULT_CLAUSE_SEARCH_BUDGET_MS;
+  }
 
   async findClause(input: FindClauseInput): Promise<readonly ClauseEvidence[]> {
     const result = await this.findClauseWithDiagnostics(input);
@@ -66,26 +80,48 @@ export class ClauseFinder {
   }
 
   private async getCandidateDocuments(input: FindClauseInput, query: string): Promise<{ readonly documents: readonly StandardDocument[]; readonly failures: readonly ClauseRetrievalFailure[]; readonly candidateCodes: readonly string[] }> {
-    const candidates = await this.standards.searchStandard({ ...input, query: expandTerms(query).join(" "), limit: Math.min(input.limit ?? 5, 5) });
-    const documents: StandardDocument[] = [];
-    const failures: ClauseRetrievalFailure[] = [];
+    const deadline = this.totalTimeoutMs > 0 ? Date.now() + this.totalTimeoutMs : undefined;
+    const controller = new AbortController();
+    const timer = deadline === undefined ? undefined : setTimeout(() => controller.abort(), this.totalTimeoutMs);
 
-    for (const candidate of candidates) {
-      try {
-        documents.push(await this.standards.getStandard(candidate.code));
-      } catch (error) {
-        if (!(error instanceof KcscClientError) && !(error instanceof StandardsServiceError)) {
-          throw error;
+    try {
+      const candidates = await this.standards.searchStandard({ ...input, query: expandTerms(query).join(" "), limit: Math.min(input.limit ?? 5, 5) }, { signal: controller.signal });
+      const documents: StandardDocument[] = [];
+      const failures: ClauseRetrievalFailure[] = [];
+
+      for (const candidate of candidates) {
+        if (this.budgetExpired(controller, deadline)) {
+          failures.push({ code: candidate.code, message: this.budgetMessage() });
+          continue;
         }
-        failures.push({ code: candidate.code, message: error.message });
+        try {
+          documents.push(await this.standards.getStandard(candidate.code, { signal: controller.signal }));
+        } catch (error) {
+          if (!(error instanceof KcscClientError) && !(error instanceof StandardsServiceError)) {
+            throw error;
+          }
+          failures.push({ code: candidate.code, message: controller.signal.aborted ? this.budgetMessage() : error.message });
+        }
+      }
+
+      if (candidates.length > 0 && documents.length === 0) {
+        const details = failures.map((failure) => `${failure.code}: ${failure.message}`).join("; ");
+        throw new ClauseSearchError(`KCSC detail retrieval failed for all candidate standards. ${details}`, failures);
+      }
+      return { documents, failures, candidateCodes: candidates.map((candidate) => candidate.code) };
+    } finally {
+      if (timer !== undefined) {
+        clearTimeout(timer);
       }
     }
+  }
 
-    if (candidates.length > 0 && documents.length === 0) {
-      const details = failures.map((failure) => `${failure.code}: ${failure.message}`).join("; ");
-      throw new ClauseSearchError(`KCSC detail retrieval failed for all candidate standards. ${details}`, failures);
-    }
-    return { documents, failures, candidateCodes: candidates.map((candidate) => candidate.code) };
+  private budgetExpired(controller: AbortController, deadline: number | undefined): boolean {
+    return controller.signal.aborted || (deadline !== undefined && Date.now() >= deadline);
+  }
+
+  private budgetMessage(): string {
+    return `Clause search budget of ${this.totalTimeoutMs} ms elapsed before this standard was read. Results are partial.`;
   }
 }
 

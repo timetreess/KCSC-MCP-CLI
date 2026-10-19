@@ -16,7 +16,7 @@ import type {
   StandardTypeFilter,
   WorkType
 } from "../api/kcsc-types.js";
-import { KcscClient } from "../api/kcsc-client.js";
+import { KcscClient, type KcscRequestOptions } from "../api/kcsc-client.js";
 import { formatStandardCode, isSupportedCodeType, parseStandardCode, standardTypeFromCodeType } from "./code-parser.js";
 import { normalizeHtml } from "./formatting.js";
 
@@ -68,17 +68,20 @@ export class StandardsService {
 
   constructor(private readonly client: KcscClient) {}
 
-  async searchStandard(input: SearchStandardInput): Promise<readonly StandardSummary[]> {
+  async searchStandard(input: SearchStandardInput, options: KcscRequestOptions = {}): Promise<readonly StandardSummary[]> {
     const query = input.query.trim();
     if (!query) {
       throw new StandardsServiceError("Search query is required.");
     }
 
-    const metadata = await this.readMetadata();
+    const metadata = await this.readMetadata(options);
     return this.rankSummaries(metadata, input, query);
   }
 
-  private async readMetadata(): Promise<readonly KcscListItem[]> {
+  private async readMetadata(options: KcscRequestOptions = {}): Promise<readonly KcscListItem[]> {
+    if (options.signal) {
+      return this.client.fetchCodeList(options);
+    }
     this.metadataRequest ??= this.client.fetchCodeList().finally(() => {
       this.metadataRequest = undefined;
     });
@@ -118,13 +121,13 @@ export class StandardsService {
     };
   }
 
-  async getStandard(codeInput: string): Promise<StandardDocument> {
+  async getStandard(codeInput: string, options: KcscRequestOptions = {}): Promise<StandardDocument> {
     const parsed = parseStandardCode(codeInput);
     if (!parsed) {
       throw new StandardsServiceError("Invalid standard code format. Expected forms like KDS 11 10 05 or KCS571005.");
     }
 
-    const item = await this.client.fetchCodeViewer(parsed.type, parsed.apiCode);
+    const item = await this.client.fetchCodeViewer(parsed.type, parsed.apiCode, options);
     if (!item) {
       throw new StandardsServiceError(`KCSC returned no document for ${parsed.formatted}. Check the code and standard type.`);
     }

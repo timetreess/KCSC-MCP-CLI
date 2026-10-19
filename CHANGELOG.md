@@ -15,6 +15,8 @@ names are unchanged; several MCP response payloads gained fields.
 - Default 15s per-request deadline (`KcscClient` `requestTimeoutMs`) and caller cancellation via
   `signal`. `KcscClientError.reason` distinguishes http, timeout, cancelled, transport, invalid-json,
   and invalid-response.
+- Default 30s total budget for a clause search (`ClauseFinder` `totalTimeoutMs`), so waiting time no
+  longer scales with the number of candidates. Candidates left unread are reported in `failures`.
 - MCP tools publish real output schemas, so malformed payloads are rejected instead of shipped.
 - `npm run verify:package` verifies the packed artifact's CLI and stdio entry points.
 
@@ -34,6 +36,8 @@ names are unchanged; several MCP response payloads gained fields.
 
 - `sectionPath` could contain empty entries when the first heading had a deep level.
 - `check_applicability` responses are shaped correctly in the published schema.
+- A clause search could wait indefinitely when several candidate documents each hit the per-request
+  deadline.
 
 ### Security
 
