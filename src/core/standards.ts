@@ -63,6 +63,9 @@ export class StandardsServiceError extends Error {
 }
 
 export class StandardsService {
+  /** Shares one in-flight CodeList response across concurrent callers. Deliberately not a TTL cache: metadata freshness is the caller's concern. */
+  private metadataRequest: Promise<readonly KcscListItem[]> | undefined;
+
   constructor(private readonly client: KcscClient) {}
 
   async searchStandard(input: SearchStandardInput): Promise<readonly StandardSummary[]> {
@@ -71,7 +74,18 @@ export class StandardsService {
       throw new StandardsServiceError("Search query is required.");
     }
 
-    const metadata = await this.client.fetchCodeList();
+    const metadata = await this.readMetadata();
+    return this.rankSummaries(metadata, input, query);
+  }
+
+  private async readMetadata(): Promise<readonly KcscListItem[]> {
+    this.metadataRequest ??= this.client.fetchCodeList().finally(() => {
+      this.metadataRequest = undefined;
+    });
+    return this.metadataRequest;
+  }
+
+  private rankSummaries(metadata: readonly KcscListItem[], input: SearchStandardInput, query: string): readonly StandardSummary[] {
     const exactCode = parseStandardCode(query);
     const terms = tokenize(query);
     const projectTerms = input.projectType ? PROJECT_KEYWORDS[input.projectType] : [];
@@ -89,10 +103,11 @@ export class StandardsService {
   }
 
   async searchStandardDual(input: Omit<SearchStandardInput, "standardType" | "specialtyType">): Promise<StandardDualResult> {
-    const [kdsResults, kcsResults] = await Promise.all([
-      this.searchStandard({ ...input, standardType: "KDS" }),
-      this.searchStandard({ ...input, standardType: "KCS" })
-    ]);
+    const metadata = await this.readMetadata();
+    const [kdsResults, kcsResults] = [
+      this.rankSummaries(metadata, { ...input, standardType: "KDS" }, input.query),
+      this.rankSummaries(metadata, { ...input, standardType: "KCS" }, input.query)
+    ];
 
     return {
       query: input.query,
@@ -123,7 +138,7 @@ export class StandardsService {
       throw new StandardsServiceError("Invalid standard code format. Expected forms like KDS 11 10 05 or KCS571005.");
     }
 
-    const metadata = await this.client.fetchCodeList();
+    const metadata = await this.readMetadata();
     const summary = metadata
       .map((item) => toSummary(item))
       .find((candidate) => candidate?.codeType === parsed.type && candidate.apiCode === parsed.apiCode);

@@ -7,25 +7,38 @@ export interface FetchResponseLike {
   json(): Promise<unknown>;
 }
 
-export type FetchLike = (url: string) => Promise<FetchResponseLike>;
+export interface FetchLikeOptions {
+  readonly signal?: AbortSignal;
+}
+
+export type FetchLike = (url: string, options?: FetchLikeOptions) => Promise<FetchResponseLike>;
 
 export class KcscClientError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly reason: "http" | "timeout" | "cancelled" | "transport" | "invalid-json" | "invalid-response" = "transport") {
     super(message);
     this.name = "KcscClientError";
   }
 }
 
+export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+
 export interface KcscClientOptions {
   readonly apiKey: string;
   readonly fetchFn?: FetchLike;
   readonly baseUrl?: string;
+  /** Deadline applied to a single KCSC request. Set to 0 to wait indefinitely. */
+  readonly requestTimeoutMs?: number;
+}
+
+export interface KcscRequestOptions {
+  readonly signal?: AbortSignal;
 }
 
 export class KcscClient {
   private readonly apiKey: string;
   private readonly fetchFn: FetchLike;
   private readonly baseUrl: string;
+  private readonly requestTimeoutMs: number;
 
   constructor(options: KcscClientOptions) {
     if (!options.apiKey.trim()) {
@@ -35,6 +48,7 @@ export class KcscClient {
     this.apiKey = options.apiKey;
     this.fetchFn = options.fetchFn ?? fetch;
     this.baseUrl = options.baseUrl ?? "https://kcsc.re.kr/OpenApi";
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
   buildCodeListUrl(redactKey = false): string {
@@ -45,16 +59,16 @@ export class KcscClient {
     return `${this.baseUrl}/CodeViewer/${encodeURIComponent(type)}/${encodeURIComponent(code)}?key=${redactKey ? "REDACTED" : encodeURIComponent(this.apiKey)}`;
   }
 
-  async fetchCodeList(): Promise<readonly KcscListItem[]> {
-    const data = await this.getJson(this.buildCodeListUrl());
+  async fetchCodeList(options: KcscRequestOptions = {}): Promise<readonly KcscListItem[]> {
+    const data = await this.getJson(this.buildCodeListUrl(), options);
     return parseCodeListResponse(data);
   }
 
-  async fetchCodeViewer(type: StandardCodeType | string, code: string): Promise<KcscViewerItem | null> {
-    const data = await this.getJson(this.buildCodeViewerUrl(type, code));
+  async fetchCodeViewer(type: StandardCodeType | string, code: string, options: KcscRequestOptions = {}): Promise<KcscViewerItem | null> {
+    const data = await this.getJson(this.buildCodeViewerUrl(type, code), options);
     const item = parseCodeViewerResponse(data);
     if (item && (item.codeType?.toUpperCase() !== type.toUpperCase() || item.code !== code)) {
-      throw new KcscClientError("KCSC OpenAPI returned a document that does not match the requested standard code.");
+      throw new KcscClientError("KCSC OpenAPI returned a document that does not match the requested standard code.", "invalid-response");
     }
     return item;
   }
@@ -63,23 +77,76 @@ export class KcscClient {
     return `KcscClient(${this.buildCodeListUrl(true)})`;
   }
 
-  private async getJson(url: string): Promise<unknown> {
-    const response = await this.fetchFn(url);
+  private async getJson(url: string, options: KcscRequestOptions): Promise<unknown> {
+    if (options.signal?.aborted) {
+      throw new KcscClientError("KCSC OpenAPI request was cancelled before it started.", "cancelled");
+    }
+
+    const controller = new AbortController();
+    const forwardAbort = () => controller.abort();
+    options.signal?.addEventListener("abort", forwardAbort, { once: true });
+
+    // The deadline and caller cancellation are raced locally rather than delegated to the
+    // underlying fetch, so they still apply when an injected fetch ignores the abort signal.
+    const losers: Promise<never>[] = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (this.requestTimeoutMs > 0) {
+      losers.push(new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new KcscClientError(`KCSC OpenAPI request timed out after ${this.requestTimeoutMs} ms.`, "timeout"));
+          controller.abort();
+        }, this.requestTimeoutMs);
+      }));
+    }
+    if (options.signal) {
+      losers.push(new Promise<never>((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () => {
+          reject(new KcscClientError("KCSC OpenAPI request was cancelled by the caller.", "cancelled"));
+        }, { once: true });
+      }));
+    }
+    losers.forEach((loser) => loser.catch(() => undefined));
+
+    const request = this.fetchFn(url, { signal: controller.signal });
+    request.catch(() => undefined);
+
+    let response: FetchResponseLike;
+    try {
+      response = losers.length > 0 ? await Promise.race([request, ...losers]) : await request;
+    } catch (error) {
+      throw this.requestError(options.signal, error);
+    } finally {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      options.signal?.removeEventListener("abort", forwardAbort);
+    }
+
     if (!response.ok) {
-      throw new KcscClientError(`KCSC OpenAPI request failed: HTTP ${response.status}`);
+      throw new KcscClientError(`KCSC OpenAPI request failed: HTTP ${response.status}`, "http");
     }
     try {
       return await response.json();
     } catch {
-      throw new KcscClientError("KCSC OpenAPI returned invalid JSON.");
+      throw new KcscClientError("KCSC OpenAPI returned invalid JSON.", "invalid-json");
     }
+  }
+
+  private requestError(callerSignal: AbortSignal | undefined, cause: unknown): KcscClientError {
+    if (cause instanceof KcscClientError) {
+      return cause;
+    }
+    if (callerSignal?.aborted) {
+      return new KcscClientError("KCSC OpenAPI request was cancelled by the caller.", "cancelled");
+    }
+    return new KcscClientError("KCSC OpenAPI request failed before receiving a response.", "transport");
   }
 }
 
 export function parseCodeListResponse(data: unknown): readonly KcscListItem[] {
   const items = responseItems(data, "CodeList");
   if (!items.every(isKcscListItem)) {
-    throw new KcscClientError("Invalid KCSC CodeList response: malformed metadata item.");
+    throw new KcscClientError("Invalid KCSC CodeList response: malformed metadata item.", "invalid-response");
   }
   return items;
 }
@@ -87,7 +154,7 @@ export function parseCodeListResponse(data: unknown): readonly KcscListItem[] {
 export function parseCodeViewerResponse(data: unknown): KcscViewerItem | null {
   const items = responseItems(data, "CodeViewer");
   if (!items.every(isKcscViewerItem)) {
-    throw new KcscClientError("Invalid KCSC CodeViewer response: malformed document item.");
+    throw new KcscClientError("Invalid KCSC CodeViewer response: malformed document item.", "invalid-response");
   }
   return items[0] ?? null;
 }
@@ -99,7 +166,7 @@ function responseItems(data: unknown, endpoint: "CodeList" | "CodeViewer"): read
   if (isObject(data) && Array.isArray(data.list)) {
     return data.list;
   }
-  throw new KcscClientError(`Invalid KCSC ${endpoint} response: expected an array or an object with a list array.`);
+  throw new KcscClientError(`Invalid KCSC ${endpoint} response: expected an array or an object with a list array.`, "invalid-response");
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

@@ -99,6 +99,15 @@ describe("ClauseFinder", () => {
     expect(result.clauses[0]?.text).toContain("되메우기 다짐");
   });
 
+  it("never emits empty or undefined breadcrumbs in the section path", async () => {
+    const clauses = await finderWithViewer().findClause({ query: "되메우기 다짐", standardCode: "KDS111005" });
+    for (const clause of clauses) {
+      expect(clause.sectionPath.every((entry) => typeof entry === "string" && entry.trim().length > 0)).toBe(true);
+      expect(clause.sectionPath[0]).toBeDefined();
+    }
+    expect(clauses[0]?.sectionPath.at(-1)).toBe("4.5 되메우기 및 다짐");
+  });
+
   it("treats title-only matches as related evidence rather than direct evidence", () => {
     const clauses = rankDocumentSections(
       {

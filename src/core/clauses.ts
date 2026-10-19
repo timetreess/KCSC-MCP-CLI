@@ -139,13 +139,15 @@ export function rankDocumentSections(document: StandardDocument, terms: readonly
 }
 
 function updatePath(pathStack: string[], section: StandardSection): void {
-  const level = section.level ?? 1;
   const title = section.title.trim();
   if (!title) {
     return;
   }
-  pathStack.splice(Math.max(level - 1, 0));
-  pathStack[level - 1] = title;
+  // Clamping keeps a deep first heading from creating a sparse array, which would surface as
+  // `undefined` breadcrumbs in the returned section path.
+  const index = Math.min(Math.max((section.level ?? 1) - 1, 0), pathStack.length);
+  pathStack.splice(index);
+  pathStack[index] = title;
 }
 
 function scoreSection(section: StandardSection, path: readonly string[], terms: readonly string[]): number {

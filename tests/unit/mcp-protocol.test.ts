@@ -88,6 +88,49 @@ describe("MCP protocol compatibility", () => {
     }
   });
 
+  it("publishes strict output schemas and never emits a payload its own tool rejects", async () => {
+    const server = new McpServer({ name: "kcsc-standards-mcp", version: "1.0.0" });
+    registerKcscTools(server, {
+      createService: () => serviceWith(async (url) => ({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => url.includes("CodeList") ? codeListFixture : kdsViewerFixture
+      })),
+      createClient: () => new KcscClient({ apiKey: "test-secret", fetchFn: async () => ({ ok: true, status: 200, statusText: "OK", json: async () => codeListFixture }) })
+    });
+    const client = new Client({ name: "kcsc-standards-test", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+
+    try {
+      const listed = await client.listTools();
+      for (const tool of listed.tools) {
+        expect(tool.outputSchema, `${tool.name} must publish an output schema`).toBeDefined();
+        expect(tool.outputSchema?.additionalProperties, `${tool.name} must reject unknown payload fields`).toBe(false);
+      }
+
+      for (const request of [
+        { name: "search_standard", arguments: { query: "KDS 11 10 05" } },
+        { name: "search_standard", arguments: { query: "포장", standard_type: "specialty", specialty_type: "EXCS" } },
+        { name: "get_standard", arguments: { code: "KDS 11 10 05" } },
+        { name: "search_standard_dual", arguments: { query: "공통" } },
+        { name: "find_clause", arguments: { query: "되메우기 다짐", standard_code: "KDS 11 10 05" } },
+        { name: "latest_check", arguments: { code: "KDS 11 10 05" } },
+        { name: "latest_check", arguments: { code: "KDS 99 99 99" } },
+        { name: "check_applicability", arguments: { code: "KDS 11 10 05", work_type: "geotechnical" } },
+        { name: "check_applicability", arguments: { code: "KDS 11 10 05" } },
+        { name: "verify_citation", arguments: { text: "KDS 11 10 05 및 KCS 99 99 99" } }
+      ]) {
+        const result = await client.callTool(request);
+        expect(result.isError, `${request.name} ${JSON.stringify(request.arguments)} must satisfy its own output schema`).not.toBe(true);
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("returns tool errors rather than negative metadata results for malformed upstream responses", async () => {
     const clientOptions = {
       apiKey: "test-secret",
