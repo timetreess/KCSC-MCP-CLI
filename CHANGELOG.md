@@ -1,9 +1,16 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 - Unreleased
 
-Reliability and evidence-integrity work over the 1.0.0 surface. The public CLI commands and MCP tool
-names are unchanged; several MCP response payloads gained fields.
+This unreleased major version groups the public contract changes made since 1.0.0.
+
+### Breaking
+
+- `get_standard` omits source HTML by default; request `include_html: true` to include it. Its text
+  response is now a short status line, while the document is returned once in `structuredContent`.
+- `latest_check` no longer returns `latestKnown`, which duplicated `exists` and implied a version
+  comparison the API does not provide.
+- The package now depends on Zod 4. Consumers using the exported Zod schemas should use Zod 4.
 
 ### Added
 
@@ -18,6 +25,10 @@ names are unchanged; several MCP response payloads gained fields.
 - Default 30s total budget for a clause search (`ClauseFinder` `totalTimeoutMs`), so waiting time no
   longer scales with the number of candidates. Candidates left unread are reported in `failures`.
 - MCP tools publish real output schemas, so malformed payloads are rejected instead of shipped.
+- `get_standard` supports table-of-contents mode and exact section-label filtering.
+- `find_clause` has a separate `candidate_limit` so document retrieval is independent from the
+  maximum number of returned clauses.
+- CLI supports per-command `--help`, `--version`, and `--json`; unknown options return an error.
 - `npm run verify:package` verifies the packed artifact's CLI and stdio entry points.
 
 ### Changed
@@ -31,6 +42,9 @@ names are unchanged; several MCP response payloads gained fields.
 - `kcsc get` prints every clause and reports the clause count instead of silently truncating at 30.
 - Candidate discovery expands query synonyms, and single-syllable applicability keywords were removed.
 - Concurrent metadata reads share one in-flight `CodeList` request.
+- Search ranks standard names above classification paths and ignores generic request words.
+- `.env` loading is limited to the package root or a path explicitly selected with `KCSC_ENV_FILE`.
+- The CLI and MCP server read their version from `package.json`.
 
 ### Fixed
 
@@ -41,8 +55,8 @@ names are unchanged; several MCP response payloads gained fields.
 
 ### Security
 
-- Updated `@modelcontextprotocol/sdk` to 1.32.1 and refreshed the lockfile. `npm audit` reports no
-  known vulnerabilities in production or development dependencies.
+- Updated `@modelcontextprotocol/sdk` and Zod, and refreshed transitive dependencies. `npm audit`
+  reports no known vulnerabilities in production or development dependencies.
 
 ## 1.0.0 - 2026-05-05
 

@@ -14,19 +14,19 @@ export class ValidationError extends Error {
 }
 
 export function parseStandardTypeFilter(value: string | undefined): StandardTypeFilter | undefined {
-  return parseOptionalEnum(value, standardTypeSchema, "standard type");
+  return parseOptionalEnum(value, STANDARD_TYPE_FILTERS, "standard type");
 }
 
 export function parseSpecialtyTypeFilter(value: string | undefined): SpecialtyTypeFilter | undefined {
-  return parseOptionalEnum(value, specialtyTypeSchema, "specialty type");
+  return parseOptionalEnum(value, SPECIALTY_TYPE_FILTERS, "specialty type");
 }
 
 export function parseProjectType(value: string | undefined): ProjectType | undefined {
-  return parseOptionalEnum(value, projectTypeSchema, "project type");
+  return parseOptionalEnum(value, PROJECT_TYPES, "project type");
 }
 
 export function parseWorkType(value: string | undefined): WorkType | undefined {
-  return parseOptionalEnum(value, workTypeSchema, "work type");
+  return parseOptionalEnum(value, WORK_TYPES, "work type");
 }
 
 export function parseLimit(value: string | undefined, maximum: number): number | undefined {
@@ -58,14 +58,17 @@ export function buildSearchInputFromOptions(query: string, options: Readonly<Rec
   };
 }
 
-function parseOptionalEnum<T extends string>(value: string | undefined, schema: z.ZodEnum<[T, ...T[]]>, label: string): T | undefined {
+function parseOptionalEnum<T extends string>(value: string | undefined, values: readonly T[], label: string): T | undefined {
   if (value === undefined) {
     return undefined;
   }
 
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) {
+  if (!isEnumValue(values, value)) {
     throw new ValidationError(`Invalid ${label}: ${value}.`);
   }
-  return parsed.data;
+  return value;
+}
+
+function isEnumValue<T extends string>(values: readonly T[], value: string): value is T {
+  return values.some((candidate) => candidate === value);
 }
