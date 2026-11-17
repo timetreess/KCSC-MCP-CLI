@@ -5,8 +5,9 @@ import { ApplicabilityChecker } from "../core/applicability.js";
 import { ClauseFinder } from "../core/clauses.js";
 import { verifyCitations } from "../core/citations.js";
 import { createKcscClient, createStandardsService } from "../core/service-factory.js";
-import { buildSearchInputFromOptions, parseProjectType, parseWorkType } from "../core/validators.js";
+import { buildSearchInputFromOptions, parseLimit, parseProjectType, parseWorkType } from "../core/validators.js";
 import type { StandardsService } from "../core/standards.js";
+import { packageInfo } from "../package-info.js";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -28,11 +29,40 @@ export interface CliDependencies {
   readonly readTextFile?: (path: string) => Promise<string>;
 }
 
+const CLI_OPTIONS: Readonly<Record<string, readonly string[]>> = {
+  search: ["type", "specialty", "project", "work", "limit", "json", "help", "version"],
+  searchdual: ["project", "work", "limit", "json", "help", "version"],
+  get: ["json", "help", "version"],
+  clause: ["type", "specialty", "project", "work", "limit", "candidate-limit", "code", "json", "help", "version"],
+  applicable: ["project", "work", "json", "help", "version"],
+  latest: ["json", "help", "version"],
+  verify: ["text", "json", "help", "version"]
+};
+
 export async function runCli(args: readonly string[], io: CliIo = { stdout: process.stdout, stderr: process.stderr }, dependencies: CliDependencies = {}): Promise<number> {
   const parsed = parseArgs(args);
-  if (parsed.command === "help" || parsed.command === "--help" || parsed.command === "-h" || parsed.command === "") {
+  if (parsed.command === "help" || parsed.command === "--help" || parsed.command === "") {
     io.stdout.write(helpText());
     return 0;
+  }
+  if (parsed.command === "--version" || parsed.options.version === "true") {
+    io.stdout.write(`${packageInfo.name} ${packageInfo.version}\n`);
+    return 0;
+  }
+  if (parsed.options.help === "true") {
+    const commandOptions = CLI_OPTIONS[parsed.command];
+    if (!commandOptions) {
+      io.stderr.write(`Unknown command: ${parsed.command}\n`);
+      return 1;
+    }
+    io.stdout.write(helpText(parsed.command));
+    return 0;
+  }
+
+  const validationError = validateInvocation(parsed);
+  if (validationError) {
+    io.stderr.write(`${validationError}\n`);
+    return 1;
   }
 
   try {
@@ -43,43 +73,53 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
     if (parsed.command === "search") {
       const query = parsed.positional.join(" ").trim();
       const results = await service.searchStandard(toSearchInput(query, parsed.options));
-      io.stdout.write(formatSearchResults(results));
+      writeCliOutput(io, { results }, formatSearchResults(results), parsed.options.json === "true");
       return 0;
     }
 
     if (parsed.command === "get") {
       const code = parsed.positional.join(" ").trim();
       const document = await service.getStandard(code);
-      io.stdout.write(formatDocument(document));
+      writeCliOutput(io, { document }, formatDocument(document), parsed.options.json === "true");
       return 0;
     }
 
     if (parsed.command === "searchdual") {
       const query = parsed.positional.join(" ").trim();
       const results = await service.searchStandardDual(toSearchInput(query, parsed.options));
-      io.stdout.write(formatSearchDualResults(results));
+      writeCliOutput(io, { result: results }, formatSearchDualResults(results), parsed.options.json === "true");
       return 0;
     }
 
     if (parsed.command === "clause") {
       const query = parsed.positional.join(" ").trim();
       const finder = new ClauseFinder(service);
-      const result = await finder.findClauseWithDiagnostics({ ...toSearchInput(query, parsed.options), ...(parsed.options.code ? { standardCode: parsed.options.code } : {}) });
+      const candidateLimit = parseLimit(parsed.options["candidate-limit"], 20);
+      const result = await finder.findClauseWithDiagnostics({
+        ...toSearchInput(query, parsed.options),
+        ...(parsed.options.code ? { standardCode: parsed.options.code } : {}),
+        ...(candidateLimit ? { candidateLimit } : {})
+      });
       if (result.failures.length > 0) {
-        io.stdout.write("주의: 일부 후보 기준을 조회하지 못한 불완전한 검색 결과입니다.\n\n");
+        const warning = "주의: 일부 후보 기준을 조회하지 못한 불완전한 검색 결과입니다.\n";
+        if (parsed.options.json === "true") {
+          io.stderr.write(warning);
+        } else {
+          io.stdout.write(`${warning}\n`);
+        }
         io.stderr.write(`${result.failures.map((failure) => `${failure.code}: ${failure.message}`).join("\n")}\n`);
       }
       if (result.searchScope === "unresolved") {
         io.stderr.write(`${result.scopeNote ?? ""}\n`);
       }
-      io.stdout.write(formatClauses(result.clauses, result.searchScope, result.searchedCodes));
+      writeCliOutput(io, result, formatClauses(result.clauses, result.searchScope, result.searchedCodes), parsed.options.json === "true");
       return 0;
     }
 
     if (parsed.command === "latest") {
       const code = parsed.positional.join(" ").trim();
       const result = await service.latestCheck(code);
-      io.stdout.write(formatLatestCheck(result));
+      writeCliOutput(io, { result }, formatLatestCheck(result), parsed.options.json === "true");
       return 0;
     }
 
@@ -96,7 +136,7 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
         ...(projectType ? { projectType } : {}),
         ...(workType ? { workType } : {})
       });
-      io.stdout.write(formatApplicability(result));
+      writeCliOutput(io, { result }, formatApplicability(result), parsed.options.json === "true");
       return 0;
     }
 
@@ -108,7 +148,7 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
       }
       const metadata = await fetchMetadata();
       const verifications = verifyCitations(text, metadata);
-      io.stdout.write(formatCitationVerifications(verifications));
+      writeCliOutput(io, { citations: verifications }, formatCitationVerifications(verifications), parsed.options.json === "true");
       return 0;
     }
 
@@ -121,7 +161,8 @@ export async function runCli(args: readonly string[], io: CliIo = { stdout: proc
 }
 
 export function parseArgs(args: readonly string[]): ParsedCli {
-  const [command = "", ...rest] = args;
+  const [first = "", ...rest] = args;
+  const command = first === "-h" ? "--help" : first === "-v" ? "--version" : first;
   const positional: string[] = [];
   const options: Record<string, string> = {};
 
@@ -131,10 +172,22 @@ export function parseArgs(args: readonly string[]): ParsedCli {
       continue;
     }
 
+    if (value === "-h" || value === "-v") {
+      options[value === "-h" ? "help" : "version"] = "true";
+      continue;
+    }
+
     if (value.startsWith("--")) {
-      const key = value.slice(2);
+      const equalsIndex = value.indexOf("=");
+      const key = value.slice(2, equalsIndex < 0 ? undefined : equalsIndex);
+      if (equalsIndex >= 0) {
+        options[key] = value.slice(equalsIndex + 1);
+        continue;
+      }
       const next = rest[index + 1];
-      if (next && !next.startsWith("--")) {
+      if (["help", "version", "json"].includes(key)) {
+        options[key] = "true";
+      } else if (next && !next.startsWith("--")) {
         options[key] = next;
         index += 1;
       } else {
@@ -147,6 +200,35 @@ export function parseArgs(args: readonly string[]): ParsedCli {
   }
 
   return { command, positional, options };
+}
+
+function validateInvocation(parsed: ParsedCli): string | undefined {
+  const supportedOptions = CLI_OPTIONS[parsed.command];
+  if (!supportedOptions) {
+    return `Unknown command: ${parsed.command}`;
+  }
+
+  for (const option of Object.keys(parsed.options)) {
+    if (!supportedOptions.includes(option)) {
+      return `Unknown option --${option} for ${parsed.command}.`;
+    }
+  }
+
+  const argument = parsed.positional.join(" ").trim();
+  if (["search", "searchdual", "clause"].includes(parsed.command) && !argument) {
+    return `${parsed.command} requires a query.`;
+  }
+  if (["get", "applicable", "latest"].includes(parsed.command) && !argument) {
+    return `${parsed.command} requires a standard code.`;
+  }
+  if (parsed.command === "verify" && !argument && !parsed.options.text?.trim()) {
+    return "verify requires a Markdown/text file path or --text input.";
+  }
+  return undefined;
+}
+
+function writeCliOutput(io: CliIo, jsonValue: unknown, text: string, asJson: boolean): void {
+  io.stdout.write(asJson ? `${JSON.stringify(jsonValue, null, 2)}\n` : text);
 }
 
 function toSearchInput(query: string, options: Readonly<Record<string, string>>): SearchStandardInput {
@@ -238,8 +320,7 @@ function formatClauses(clauses: readonly ClauseEvidence[], searchScope: ClauseSe
 function formatLatestCheck(result: LatestCheckResult): string {
   return [
     `- 기준코드: ${result.standard?.code ?? result.inputCode}`,
-    `- 최신본 여부: ${result.latestKnown ? "현재 KCSC metadata에서 확인됨" : "미확인"}`,
-    `- 존재 여부: ${result.exists ? "확인됨" : "미확인"}`,
+    `- 현재 metadata 존재 여부: ${result.exists ? "확인됨" : "확인되지 않음"}`,
     `- 메타데이터 상태: ${result.metadataStatus}`,
     result.standard ? `- 기준명: ${result.standard.name}` : undefined,
     result.standard ? `- 개정일: ${result.standard.updateDate ?? result.standard.version ?? "미확인"}` : undefined,
@@ -283,8 +364,20 @@ function formatCitationVerifications(verifications: readonly CitationVerificatio
   ].filter((line): line is string => typeof line === "string").join("\n")).join("\n\n")}\n`;
 }
 
-function helpText(): string {
-  return `KCSC Standards CLI\n\nUsage:\n  kcsc search "터널 방수" [--type KDS|KCS|specialty|all] [--specialty EXCS] [--project road] [--work earthwork] [--limit 10]\n  kcsc searchdual "터널 방수" [--project tunnel] [--work waterproofing] [--limit 10]\n  kcsc get "KDS 11 10 05"\n  kcsc clause "되메우기 다짐" [--code "KCS 11 20 15"] [--project road] [--work earthwork]\n  kcsc applicable "KDS 11 10 05" [--project road] [--work earthwork]\n  kcsc latest "KDS 11 10 05"\n  kcsc verify ./report.md\n  kcsc verify --text "KDS 11 10 05에 따른다"\n`;
+function helpText(command?: string): string {
+  if (command) {
+    const usage: Readonly<Record<string, string>> = {
+      search: 'Usage: kcsc search "<query>" [--type KDS|KCS|specialty|all] [--specialty EXCS] [--project road] [--work earthwork] [--limit 10] [--json]',
+      searchdual: 'Usage: kcsc searchdual "<query>" [--project tunnel] [--work waterproofing] [--limit 10] [--json]',
+      get: 'Usage: kcsc get "<standard-code>" [--json]',
+      clause: 'Usage: kcsc clause "<query>" [--code "<standard-code>"] [--limit 10] [--candidate-limit 5] [--json]',
+      applicable: 'Usage: kcsc applicable "<standard-code>" [--project road] [--work earthwork] [--json]',
+      latest: 'Usage: kcsc latest "<standard-code>" [--json]',
+      verify: 'Usage: kcsc verify <file> | kcsc verify --text "<text>" [--json]'
+    };
+    return `${usage[command]}\n`;
+  }
+  return `KCSC Standards CLI ${packageInfo.version}\n\nUsage:\n  kcsc search "터널 방수" [options]\n  kcsc searchdual "터널 방수" [options]\n  kcsc get "KDS 11 10 05" [--json]\n  kcsc clause "되메우기 다짐" [options]\n  kcsc applicable "KDS 11 10 05" [options]\n  kcsc latest "KDS 11 10 05" [--json]\n  kcsc verify ./report.md [--json]\n  kcsc verify --text "KDS 11 10 05에 따른다" [--json]\n\nUse "kcsc <command> --help" for command options. Global options: --help, --version.\n`;
 }
 
 const invokedAsEntrypoint = process.argv[1]

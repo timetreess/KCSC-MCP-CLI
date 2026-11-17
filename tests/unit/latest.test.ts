@@ -12,7 +12,6 @@ describe("latestCheck", () => {
   it("confirms current metadata without claiming applicability", async () => {
     const result = await serviceWithCodeList().latestCheck("KDS 11 10 05");
     expect(result.exists).toBe(true);
-    expect(result.latestKnown).toBe(true);
     expect(result.metadataStatus).toBe("current-metadata-found");
     expect(result.message).toContain("does not compare historical versions");
   });

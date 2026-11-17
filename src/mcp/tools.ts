@@ -32,10 +32,10 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
       outputSchema: resultsOutputSchema,
       annotations: { readOnlyHint: true }
     },
-    async (input) => {
+    async (input, extra) => {
       try {
         const service = getStandardsService(dependencies);
-        const results = await service.searchStandard(toSearchInput(input));
+        const results = await service.searchStandard(toSearchInput(input), extra?.signal ? { signal: extra.signal } : {});
         return toToolResult({ results });
       } catch (error) {
         return toToolError(error);
@@ -52,11 +52,29 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
       outputSchema: documentOutputSchema,
       annotations: { readOnlyHint: true }
     },
-    async ({ code }) => {
+    async ({ code, include_text, include_html, section_labels }, extra) => {
       try {
         const service = getStandardsService(dependencies);
-        const document = await service.getStandard(code);
-        return toToolResult({ document }, document);
+        const document = await service.getStandard(code, extra?.signal ? { signal: extra.signal } : {});
+        const selectedSections = section_labels
+          ? document.sections.filter((section) => section_labels.includes(section.label))
+          : document.sections;
+        const sections = selectedSections.map((section) => ({
+          sort: section.sort,
+          title: section.title,
+          ...(section.level !== undefined ? { level: section.level } : {}),
+          label: section.label,
+          ...(include_html === true ? { html: section.html } : {}),
+          ...(include_text === false ? {} : { text: section.text })
+        }));
+        const resultDocument = { ...document, sections };
+        const textPayload = [
+          `조회 완료: ${document.code} ${document.name}.`,
+          `조항: ${sections.length}/${document.sections.length}개.`,
+          `본문: ${include_text === false ? "목차만" : "포함"}.`,
+          `HTML: ${include_html === true ? "포함" : "제외"}.`
+        ].join(" ");
+        return toToolResult({ document: resultDocument }, textPayload);
       } catch (error) {
         return toToolError(error);
       }
@@ -72,10 +90,10 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
       outputSchema: dualOutputSchema,
       annotations: { readOnlyHint: true }
     },
-    async (input) => {
+    async (input, extra) => {
       try {
         const service = getStandardsService(dependencies);
-        const result = await service.searchStandardDual(toSearchInput(input));
+        const result = await service.searchStandardDual(toSearchInput(input), extra?.signal ? { signal: extra.signal } : {});
         return toToolResult({ result }, result);
       } catch (error) {
         return toToolError(error);
@@ -92,11 +110,15 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
       outputSchema: clausesOutputSchema,
       annotations: { readOnlyHint: true }
     },
-    async (input) => {
+    async (input, extra) => {
       try {
         const service = getStandardsService(dependencies);
         const finder = new ClauseFinder(service);
-        const result = await finder.findClauseWithDiagnostics({ ...toSearchInput(input), ...(input.standard_code ? { standardCode: input.standard_code } : {}) });
+        const result = await finder.findClauseWithDiagnostics({
+          ...toSearchInput(input),
+          ...(input.standard_code ? { standardCode: input.standard_code } : {}),
+          ...(input.candidate_limit ? { candidateLimit: input.candidate_limit } : {})
+        }, extra?.signal ? { signal: extra.signal } : {});
         return toToolResult({
           clauses: result.clauses,
           failures: result.failures,
@@ -113,16 +135,16 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
   server.registerTool(
     "latest_check",
     {
-      title: "Latest Standard Check",
+      title: "Current Standard Metadata Check",
       description: "Check whether a standard code exists in current KCSC CodeList metadata. This does not determine project contractual applicability.",
       inputSchema: latestCheckInputSchema,
       outputSchema: latestOutputSchema,
       annotations: { readOnlyHint: true }
     },
-    async ({ code }) => {
+    async ({ code }, extra) => {
       try {
         const service = getStandardsService(dependencies);
-        const result = await service.latestCheck(code);
+        const result = await service.latestCheck(code, extra?.signal ? { signal: extra.signal } : {});
         return toToolResult({ result }, result);
       } catch (error) {
         return toToolError(error);
@@ -139,7 +161,7 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
       outputSchema: applicabilityOutputSchema,
       annotations: { readOnlyHint: true }
     },
-    async ({ code, project_type, work_type, specialty_type }) => {
+    async ({ code, project_type, work_type, specialty_type }, extra) => {
       try {
         const service = getStandardsService(dependencies);
         const checker = new ApplicabilityChecker(service);
@@ -148,7 +170,7 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
           ...(project_type ? { projectType: project_type } : {}),
           ...(work_type ? { workType: work_type } : {}),
           ...(specialty_type ? { specialtyType: specialty_type } : {})
-        });
+        }, extra?.signal ? { signal: extra.signal } : {});
         return toToolResult({ result }, result);
       } catch (error) {
         return toToolError(error);
@@ -165,10 +187,10 @@ export function registerKcscTools(server: KcscToolRegistrar, dependencies: KcscT
       outputSchema: citationsOutputSchema,
       annotations: { readOnlyHint: true }
     },
-    async ({ text }) => {
+    async ({ text }, extra) => {
       try {
         const client = getKcscClient(dependencies);
-        const metadata = await client.fetchCodeList();
+        const metadata = await client.fetchCodeList(extra?.signal ? { signal: extra.signal } : {});
         const citations = verifyCitations(text, metadata);
         return toToolResult({ citations });
       } catch (error) {

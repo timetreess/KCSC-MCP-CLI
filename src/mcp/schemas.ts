@@ -11,8 +11,14 @@ export const searchStandardInputSchema = z.object({
   limit: z.number().int().min(1).max(50).optional().describe("Maximum result count. Defaults to 10.")
 });
 
-export const getStandardInputSchema = z.object({
+const standardCodeInputSchema = z.object({
   code: z.string().min(1).describe("Standard code such as KDS 11 10 05, KCS-57-10-05, or KDS111005.")
+});
+
+export const getStandardInputSchema = standardCodeInputSchema.extend({
+  include_text: z.boolean().optional().describe("Include section body text. Defaults to true; set false for a table-of-contents response."),
+  include_html: z.boolean().optional().describe("Include original section HTML. Defaults to false."),
+  section_labels: z.array(z.string().min(1)).min(1).max(50).optional().describe("Optional exact section labels to return.")
 });
 
 export const searchStandardDualInputSchema = z.object({
@@ -29,10 +35,11 @@ export const findClauseInputSchema = z.object({
   specialty_type: specialtyTypeSchema.optional().describe("Optional specialty standard family filter."),
   project_type: projectTypeSchema.optional().describe("Optional project preset."),
   work_type: workTypeSchema.optional().describe("Optional work-type ranking heuristic."),
-  limit: z.number().int().min(1).max(20).optional().describe("Maximum clause evidence count. Defaults to 10.")
+  limit: z.number().int().min(1).max(20).optional().describe("Maximum clause evidence count. Defaults to 10."),
+  candidate_limit: z.number().int().min(1).max(20).optional().describe("Maximum candidate documents to inspect. Defaults to 5.")
 });
 
-export const latestCheckInputSchema = getStandardInputSchema;
+export const latestCheckInputSchema = standardCodeInputSchema;
 
 export const checkApplicabilityInputSchema = z.object({
   code: z.string().min(1).describe("Standard code such as KDS 11 10 05 or KCS571005."),
@@ -70,8 +77,8 @@ const standardSectionSchema = z.object({
   title: z.string(),
   level: z.number().optional(),
   label: z.string(),
-  html: z.string(),
-  text: z.string()
+  html: z.string().optional(),
+  text: z.string().optional()
 });
 
 const standardDocumentSchema = standardSummarySchema.omit({ reason: true }).extend({
@@ -107,7 +114,6 @@ const applicabilityEvidenceSchema = z.object({
 const latestResultSchema = z.object({
   inputCode: z.string(),
   exists: z.boolean(),
-  latestKnown: z.boolean(),
   metadataStatus: z.enum(["current-metadata-found", "not-found-in-current-metadata"]),
   standard: standardSummarySchema.optional(),
   message: z.string()

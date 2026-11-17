@@ -98,52 +98,53 @@ export class KcscClient {
     }
 
     const controller = new AbortController();
-    const forwardAbort = () => controller.abort();
-    options.signal?.addEventListener("abort", forwardAbort, { once: true });
+    let rejectCancelled: ((reason: KcscClientError) => void) | undefined;
+    const cancellation = new Promise<never>((_resolve, reject) => {
+      rejectCancelled = reject;
+    });
+    const onCallerAbort = () => {
+      controller.abort();
+      rejectCancelled?.(new KcscClientError("KCSC OpenAPI request was cancelled by the caller.", "cancelled"));
+    };
+    options.signal?.addEventListener("abort", onCallerAbort, { once: true });
 
-    // The deadline and caller cancellation are raced locally rather than delegated to the
-    // underlying fetch, so they still apply when an injected fetch ignores the abort signal.
     const losers: Promise<never>[] = [];
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (this.requestTimeoutMs > 0) {
       losers.push(new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
-          reject(new KcscClientError(`KCSC OpenAPI request timed out after ${this.requestTimeoutMs} ms.`, "timeout"));
           controller.abort();
+          reject(new KcscClientError(`KCSC OpenAPI request timed out after ${this.requestTimeoutMs} ms.`, "timeout"));
         }, this.requestTimeoutMs);
       }));
     }
     if (options.signal) {
-      losers.push(new Promise<never>((_resolve, reject) => {
-        options.signal?.addEventListener("abort", () => {
-          reject(new KcscClientError("KCSC OpenAPI request was cancelled by the caller.", "cancelled"));
-        }, { once: true });
-      }));
+      losers.push(cancellation);
     }
     losers.forEach((loser) => loser.catch(() => undefined));
 
-    const request = this.fetchFn(url, { signal: controller.signal });
+    const request = (async () => {
+      const response = await this.fetchFn(url, { signal: controller.signal });
+      if (!response.ok) {
+        throw new KcscClientError(`KCSC OpenAPI request failed: HTTP ${response.status}`, "http");
+      }
+      try {
+        return await response.json();
+      } catch {
+        throw new KcscClientError("KCSC OpenAPI returned invalid JSON.", "invalid-json");
+      }
+    })();
     request.catch(() => undefined);
 
-    let response: FetchResponseLike;
     try {
-      response = losers.length > 0 ? await Promise.race([request, ...losers]) : await request;
+      return await (losers.length > 0 ? Promise.race([request, ...losers]) : request);
     } catch (error) {
       throw this.requestError(options.signal, error);
     } finally {
       if (timer !== undefined) {
         clearTimeout(timer);
       }
-      options.signal?.removeEventListener("abort", forwardAbort);
-    }
-
-    if (!response.ok) {
-      throw new KcscClientError(`KCSC OpenAPI request failed: HTTP ${response.status}`, "http");
-    }
-    try {
-      return await response.json();
-    } catch {
-      throw new KcscClientError("KCSC OpenAPI returned invalid JSON.", "invalid-json");
+      options.signal?.removeEventListener("abort", onCallerAbort);
     }
   }
 
@@ -201,7 +202,7 @@ function isKcscViewerItem(value: unknown): value is KcscViewerItem {
     return false;
   }
 
-  return isNonEmptyString(value.codeType) && isNonEmptyString(value.code) && isOptionalNumberOrString(value.no) && isOptionalString(value.fullCode) && isOptionalString(value.name) && isOptionalString(value.version) && isOptionalString(value.updateDate) && isOptionalString(value.message) && (value.list === undefined || value.list === null || (Array.isArray(value.list) && value.list.every(isKcscViewerSection)));
+  return isNonEmptyString(value.codeType) && isNonEmptyString(value.code) && isOptionalNumberOrString(value.no) && isOptionalString(value.fullCode) && isOptionalString(value.name) && isOptionalString(value.version) && isOptionalString(value.updateDate) && isOptionalParentCodes(value.listParentCodes) && isOptionalString(value.message) && (value.list === undefined || value.list === null || (Array.isArray(value.list) && value.list.every(isKcscViewerSection)));
 }
 
 function isKcscViewerSection(value: unknown): value is NonNullable<KcscViewerItem["list"]>[number] {

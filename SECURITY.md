@@ -10,7 +10,7 @@
 
 Please report security vulnerabilities through GitHub Security Advisories:
 
-https://github.com/timetreess/kds/security/advisories/new
+https://github.com/timetreess/KCSC-MCP-CLI/security/advisories/new
 
 If advisories are unavailable, open a private maintainer contact channel before disclosing publicly. Do not include API keys, credentials, or sensitive project documents in public issues.
 

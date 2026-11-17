@@ -52,6 +52,12 @@ describe("MCP output schemas reject malformed payloads", () => {
 
     const document = await service.getStandard("KDS111005");
     expect(documentOutputSchema.safeParse({ document }).success).toBe(true);
+    expect(documentOutputSchema.safeParse({
+      document: {
+        ...document,
+        sections: document.sections.map(({ html: _html, text: _text, ...section }) => section)
+      }
+    }).success).toBe(true);
 
     const latest = await service.latestCheck("KDS111005");
     expect(latestOutputSchema.safeParse({ result: latest }).success).toBe(true);

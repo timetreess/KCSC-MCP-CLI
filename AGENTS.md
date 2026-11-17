@@ -10,7 +10,7 @@
 
 사용자가 이 레포를 설치하거나 활용해 달라고 하면, 에이전트는 다음을 목표로 작업합니다.
 
-1. `kcsc-standards-mcp`를 설치한다.
+1. npm 게시 전에는 저장소를 내려받아 설치하고 빌드한다.
 2. 사용자의 MCP 클라이언트에 `kcsc-standards` 서버를 연결한다.
 3. `KCSC_API_KEY`를 안전하게 설정하도록 돕는다.
 4. 간단한 `kcsc search` 또는 MCP 도구 호출로 연결을 확인한다.
@@ -22,53 +22,38 @@
 
 ## 2. 설치 절차
 
-### 2.1 전역 설치
+### 2.1 저장소에서 설치
 
 ```bash
-npm install -g kcsc-standards-mcp
+git clone https://github.com/timetreess/KCSC-MCP-CLI.git
+cd KCSC-MCP-CLI
+npm ci
+npm run build
 ```
 
-설치 후 사용할 수 있는 명령은 다음입니다.
+현재 `kcsc-standards-mcp` npm 패키지는 게시되지 않았습니다. Node.js `>=20`이 필요합니다. API 키는 저장소 루트 `.env`에 두거나 MCP 프로세스에 환경변수로 전달합니다.
 
-- CLI: `kcsc`
-- MCP stdio server: `kcsc-mcp`
+### 2.2 MCP 연결
 
-Node.js는 `>=20`이 필요합니다.
-
-### 2.2 `npx` 방식 MCP 연결
-
-전역 설치를 원하지 않는 사용자는 MCP 설정에서 `npx`로 실행할 수 있습니다.
+MCP 클라이언트 설정에서 빌드된 서버를 직접 실행합니다. 경로는 실제 저장소 위치로 바꿉니다.
 
 ```json
 {
   "mcpServers": {
     "kcsc-standards": {
-      "command": "npx",
-      "args": ["-y", "--package", "kcsc-standards-mcp", "kcsc-mcp"],
+      "command": "node",
+      "args": ["C:/path/to/KCSC-MCP-CLI/dist/src/mcp/server.js"],
       "env": {
-        "KCSC_API_KEY": "YOUR_KCSC_API_KEY_HERE"
+        "KCSC_ENV_FILE": "C:/path/to/KCSC-MCP-CLI/.env"
       }
     }
   }
 }
 ```
 
-### 2.3 전역 설치 후 MCP 연결
+저장소 루트 `.env` 대신 시스템 환경변수 `KCSC_API_KEY`를 설정해도 됩니다.
 
-```json
-{
-  "mcpServers": {
-    "kcsc-standards": {
-      "command": "kcsc-mcp",
-      "env": {
-        "KCSC_API_KEY": "YOUR_KCSC_API_KEY_HERE"
-      }
-    }
-  }
-}
-```
-
-`YOUR_KCSC_API_KEY_HERE`는 placeholder입니다. 실제 키를 문서나 공개 저장소에 커밋하지 마세요.
+직접 CLI를 실행할 때는 `node dist/src/cli/index.js search "터널 방수"`를 사용합니다.
 
 ---
 
@@ -85,7 +70,7 @@ KCSC_API_KEY
 - 실제 API 키를 소스코드에 하드코딩하지 않습니다.
 - 실제 API 키를 `README.md`, `AGENTS.md`, issue, PR, commit message에 쓰지 않습니다.
 - `.env` 파일을 커밋하지 않습니다.
-- MCP 설정 예시는 placeholder만 사용합니다.
+- `.env` 사용 시 MCP의 `KCSC_ENV_FILE`로 저장소의 설정 파일을 지정합니다. 다른 프로젝트의 `.env`를 자동으로 읽지 않습니다.
 - 로그, 테스트 스냅샷, 오류 메시지에 API 키가 노출되지 않게 합니다.
 - 기존 환경에 `KCSC_OPENAPI_KEY`, `KCSC_SERVICE_KEY`, `SERVICE_KEY`가 있더라도 사용 설명에서는 `KCSC_API_KEY`를 표준 이름으로 안내합니다.
 

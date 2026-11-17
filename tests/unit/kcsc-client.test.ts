@@ -73,6 +73,41 @@ describe("KcscClient", () => {
     expect(jsonClient.toString()).not.toContain("test-secret");
   });
 
+  it("applies the request deadline through response body parsing", async () => {
+    const client = new KcscClient({
+      apiKey: "test-secret",
+      requestTimeoutMs: 20,
+      fetchFn: async () => ({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => new Promise<unknown>(() => undefined)
+      })
+    });
+
+    const error = await client.fetchCodeList().catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ reason: "timeout" });
+  });
+
+  it("cancels while response body parsing is pending", async () => {
+    const controller = new AbortController();
+    const client = new KcscClient({
+      apiKey: "test-secret",
+      fetchFn: async () => ({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => new Promise<unknown>(() => undefined)
+      })
+    });
+
+    const request = client.fetchCodeList({ signal: controller.signal });
+    controller.abort();
+
+    const error = await request.catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ reason: "cancelled" });
+  });
+
   it("does not echo upstream HTTP or JSON error details that may contain the API key", async () => {
     for (const fetchFn of [
       async () => ({ ok: false, status: 500, statusText: "test-secret", json: async () => ({}) }),

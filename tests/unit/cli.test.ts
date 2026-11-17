@@ -44,6 +44,11 @@ describe("parseArgs", () => {
       positional: [],
       options: { text: "KDS 11 10 05", flag: "true" }
     });
+    expect(parseArgs(["search", "터널", "--json", "--limit=2", "-h"])).toEqual({
+      command: "search",
+      positional: ["터널"],
+      options: { json: "true", limit: "2", help: "true" }
+    });
   });
 });
 
@@ -52,6 +57,28 @@ describe("runCli", () => {
     const { io, stdout } = captureIo();
     await expect(runCli([], io, { createService: () => { throw new Error("should not load"); } })).resolves.toBe(0);
     expect(stdout()).toContain("KCSC Standards CLI");
+  });
+
+  it("prints command help and version without loading dependencies", async () => {
+    const commandHelp = captureIo();
+    await expect(runCli(["search", "--help"], commandHelp.io, { createService: () => { throw new Error("should not load"); } })).resolves.toBe(0);
+    expect(commandHelp.stdout()).toContain('Usage: kcsc search "<query>"');
+
+    const version = captureIo();
+    await expect(runCli(["--version"], version.io, { createService: () => { throw new Error("should not load"); } })).resolves.toBe(0);
+    expect(version.stdout()).toMatch(/^kcsc-standards-mcp \d+\.\d+\.\d+\n$/);
+  });
+
+  it("rejects unknown options before creating a service", async () => {
+    const { io, stderr } = captureIo();
+    await expect(runCli(["search", "터널", "--typ", "KDS"], io, { createService: () => { throw new Error("should not load"); } })).resolves.toBe(1);
+    expect(stderr()).toContain("Unknown option --typ");
+  });
+
+  it("writes machine-readable JSON when requested", async () => {
+    const { io, stdout } = captureIo();
+    await expect(runCli(["search", "KDS 11 10 05", "--json"], io, { createService: fixtureService })).resolves.toBe(0);
+    expect(JSON.parse(stdout())).toHaveProperty("results.0.code", "KDS 11 10 05");
   });
 
   it("runs search, get, latest, applicable, and clause commands through injected services", async () => {

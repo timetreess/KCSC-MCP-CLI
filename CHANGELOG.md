@@ -44,7 +44,7 @@ names are unchanged; several MCP response payloads gained fields.
 - Updated `@modelcontextprotocol/sdk` to 1.32.1 and refreshed the lockfile. `npm audit` reports no
   known vulnerabilities in production or development dependencies.
 
-## 1.0.0 - 2026-04-30
+## 1.0.0 - 2026-05-05
 
 Initial open-source release under the MIT License.
 

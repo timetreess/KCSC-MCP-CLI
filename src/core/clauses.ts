@@ -1,5 +1,5 @@
 import type { ClauseEvidence, ClauseRetrievalFailure, ClauseSearchResult, ConfidenceLabel, FindClauseInput, StandardDocument, StandardSection, StandardSummary } from "../api/kcsc-types.js";
-import { KcscClientError } from "../api/kcsc-client.js";
+import { KcscClientError, type KcscRequestOptions } from "../api/kcsc-client.js";
 import { StandardsService, StandardsServiceError } from "./standards.js";
 import { tokenizeQuery } from "./formatting.js";
 
@@ -29,6 +29,7 @@ export class ClauseSearchError extends Error {
 }
 
 export const DEFAULT_CLAUSE_SEARCH_BUDGET_MS = 30_000;
+export const DEFAULT_CLAUSE_CANDIDATE_LIMIT = 5;
 
 export interface ClauseFinderOptions {
   /**
@@ -45,23 +46,23 @@ export class ClauseFinder {
     this.totalTimeoutMs = options.totalTimeoutMs ?? DEFAULT_CLAUSE_SEARCH_BUDGET_MS;
   }
 
-  async findClause(input: FindClauseInput): Promise<readonly ClauseEvidence[]> {
-    const result = await this.findClauseWithDiagnostics(input);
+  async findClause(input: FindClauseInput, options: KcscRequestOptions = {}): Promise<readonly ClauseEvidence[]> {
+    const result = await this.findClauseWithDiagnostics(input, options);
     if (result.failures.length > 0) {
       throw new ClauseSearchError("Clause search is incomplete. Use findClauseWithDiagnostics to inspect partial results.", result.failures);
     }
     return result.clauses;
   }
 
-  async findClauseWithDiagnostics(input: FindClauseInput): Promise<ClauseSearchResult> {
+  async findClauseWithDiagnostics(input: FindClauseInput, options: KcscRequestOptions = {}): Promise<ClauseSearchResult> {
     const query = input.query.trim();
     if (!query) {
       throw new Error("Clause search query is required.");
     }
 
     const { documents, failures, candidateCodes } = input.standardCode
-      ? { documents: [await this.standards.getStandard(input.standardCode)], failures: [], candidateCodes: [] }
-      : await this.getCandidateDocuments(input, query);
+      ? { documents: [await this.standards.getStandard(input.standardCode, options)], failures: [], candidateCodes: [] }
+      : await this.getCandidateDocuments(input, query, options);
 
     const terms = expandTerms(query);
     const evidences = documents.flatMap((document) => rankDocumentSections(document, terms));
@@ -80,17 +81,30 @@ export class ClauseFinder {
     };
   }
 
-  private async getCandidateDocuments(input: FindClauseInput, query: string): Promise<{ readonly documents: readonly StandardDocument[]; readonly failures: readonly ClauseRetrievalFailure[]; readonly candidateCodes: readonly string[] }> {
+  private async getCandidateDocuments(input: FindClauseInput, query: string, options: KcscRequestOptions): Promise<{ readonly documents: readonly StandardDocument[]; readonly failures: readonly ClauseRetrievalFailure[]; readonly candidateCodes: readonly string[] }> {
     const deadline = this.totalTimeoutMs > 0 ? Date.now() + this.totalTimeoutMs : undefined;
     const controller = new AbortController();
+    const forwardAbort = () => controller.abort();
+    options.signal?.addEventListener("abort", forwardAbort, { once: true });
     const timer = deadline === undefined ? undefined : setTimeout(() => controller.abort(), this.totalTimeoutMs);
 
     try {
-      const candidates = await this.standards.searchStandard({ ...input, query: expandTerms(query).join(" "), limit: Math.min(input.limit ?? 5, 5) }, { signal: controller.signal });
+      if (options.signal?.aborted) {
+        throw new KcscClientError("KCSC OpenAPI request was cancelled by the caller.", "cancelled");
+      }
+      const { candidateLimit, ...searchInput } = input;
+      const candidates = await this.standards.searchStandard({
+        ...searchInput,
+        query: expandTerms(query).join(" "),
+        limit: candidateLimit ?? DEFAULT_CLAUSE_CANDIDATE_LIMIT
+      }, { signal: controller.signal });
       const documents: StandardDocument[] = [];
       const failures: ClauseRetrievalFailure[] = [];
 
       for (const candidate of candidates) {
+        if (options.signal?.aborted) {
+          throw new KcscClientError("KCSC OpenAPI request was cancelled by the caller.", "cancelled");
+        }
         if (this.budgetExpired(controller, deadline)) {
           failures.push({ code: candidate.code, message: this.budgetMessage() });
           continue;
@@ -99,6 +113,9 @@ export class ClauseFinder {
           documents.push(await this.standards.getStandard(candidate.code, { signal: controller.signal }));
         } catch (error) {
           if (!(error instanceof KcscClientError) && !(error instanceof StandardsServiceError)) {
+            throw error;
+          }
+          if (options.signal?.aborted) {
             throw error;
           }
           failures.push({ code: candidate.code, message: controller.signal.aborted ? this.budgetMessage() : error.message });
@@ -114,6 +131,7 @@ export class ClauseFinder {
       if (timer !== undefined) {
         clearTimeout(timer);
       }
+      options.signal?.removeEventListener("abort", forwardAbort);
     }
   }
 

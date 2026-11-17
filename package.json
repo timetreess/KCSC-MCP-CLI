@@ -26,11 +26,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/timetreess/kds.git"
+    "url": "git+https://github.com/timetreess/KCSC-MCP-CLI.git"
   },
-  "homepage": "https://github.com/timetreess/kds#readme",
+  "homepage": "https://github.com/timetreess/KCSC-MCP-CLI#readme",
   "bugs": {
-    "url": "https://github.com/timetreess/kds/issues"
+    "url": "https://github.com/timetreess/KCSC-MCP-CLI/issues"
   },
   "keywords": [
     "kcsc",

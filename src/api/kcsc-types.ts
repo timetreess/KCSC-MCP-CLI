@@ -73,6 +73,7 @@ export interface KcscViewerItem {
   readonly name?: string | null;
   readonly version?: string | null;
   readonly updateDate?: string | null;
+  readonly listParentCodes?: readonly KcscParentCode[] | string | null;
   readonly list?: readonly KcscViewerSection[] | null;
   readonly message?: string | null;
 }
@@ -119,6 +120,7 @@ export interface SearchStandardInput {
 
 export interface FindClauseInput extends SearchStandardInput {
   readonly standardCode?: string;
+  readonly candidateLimit?: number;
 }
 
 export interface ClauseEvidence {
@@ -158,7 +160,6 @@ export interface ClauseSearchResult {
 export interface LatestCheckResult {
   readonly inputCode: string;
   readonly exists: boolean;
-  readonly latestKnown: boolean;
   readonly metadataStatus: "current-metadata-found" | "not-found-in-current-metadata";
   readonly standard?: StandardSummary;
   readonly message: string;

@@ -69,10 +69,42 @@ it("fails fast when the budget expires before any candidate is read", async () =
   expect(Date.now() - started).toBeLessThan(2_500);
 });
 
-it("does not change behaviour when the budget is generous", async () => {
-  const clauses = await finderWithViewer().findClause({ query: "되메우기 다짐", standardCode: "KDS111005" });
-  expect(clauses[0]?.text).toContain("되메우기");
-});
+  it("does not change behaviour when the budget is generous", async () => {
+    const clauses = await finderWithViewer().findClause({ query: "되메우기 다짐", standardCode: "KDS111005" });
+    expect(clauses[0]?.text).toContain("되메우기");
+  });
+
+  it("keeps candidate document count independent from clause result count", async () => {
+    const metadata = [
+      { codeType: "KDS", code: "111001", name: "말뚝공사 일반" },
+      { codeType: "KDS", code: "111002", name: "말뚝기초 설계" }
+    ];
+    const viewedCodes: string[] = [];
+    const fetchFn: FetchLike = async (url) => {
+      if (url.includes("CodeList")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => metadata };
+      }
+      const code = /CodeViewer\/KDS\/(\d{6})/.exec(url)?.[1] ?? "";
+      viewedCodes.push(code);
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => [{
+          codeType: "KDS",
+          code,
+          name: `말뚝 기준 ${code}`,
+          version: "2025",
+          list: [{ sort: 1, title: "말뚝", label: "본문", contents: "<p>말뚝 지지력을 확인한다.</p>" }]
+        }]
+      };
+    };
+    const finder = new ClauseFinder(new StandardsService(new KcscClient({ apiKey: "test-secret", fetchFn })));
+    const result = await finder.findClauseWithDiagnostics({ query: "말뚝", limit: 1 });
+    expect(result.clauses).toHaveLength(1);
+    expect(result.searchedCodes).toHaveLength(2);
+    expect(viewedCodes).toHaveLength(2);
+  });
 
 describe("ClauseFinder", () => {
   it("expands civil engineering synonyms", () => {

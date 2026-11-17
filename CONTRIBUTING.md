@@ -5,13 +5,13 @@ Thank you for helping improve KCSC Standards MCP/CLI.
 ## Development Setup
 
 ```bash
-git clone https://github.com/timetreess/kds.git
-cd kds
-npm install
+git clone https://github.com/timetreess/KCSC-MCP-CLI.git
+cd KCSC-MCP-CLI
+npm ci
 cp .env.example .env
 ```
 
-Set `KCSC_API_KEY` in `.env` for live API usage. Unit tests use fixtures and do not require network access.
+Set `KCSC_API_KEY` in the repository's `.env` for local API usage. The npm package is not published yet, so use this repository checkout. Unit tests use fixtures and do not require network access.
 
 ## Scripts
 

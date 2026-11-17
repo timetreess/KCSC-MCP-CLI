@@ -44,8 +44,51 @@ describe("ApplicabilityChecker", () => {
     expect(result.matchedProjects).toContain("port");
   });
 
+  it("does not infer waterworks or foundation from incidental body substrings", async () => {
+    const result = await checkerWithText("감독자가 지정한 색상에 상수 k를 곱할 수도 있다.")
+      .check({ standardCode: "KDS111005", projectType: "waterworks", workType: "foundation" });
+    expect(result.projectMatched).toBe(false);
+    expect(result.workMatched).toBe(false);
+    expect(result.evidence.some((item) => item.category === "waterworks" || item.category === "foundation")).toBe(false);
+  });
+
+  it("requires repeated body evidence or multiple distinct terms", async () => {
+    const single = await checkerWithText("방파제를 설치한다.").check({ standardCode: "KDS111005", projectType: "port" });
+    expect(single.projectMatched).toBe(false);
+
+    const repeated = await checkerWithText("방파제 설치 전 방파제 안정성을 확인한다.")
+      .check({ standardCode: "KDS111005", projectType: "port" });
+    expect(repeated.projectMatched).toBe(true);
+  });
+
+  it("uses classification paths when the viewer response provides them", async () => {
+    const viewer = [{
+      codeType: "KDS",
+      code: "111005",
+      name: "시설 설계 일반",
+      version: "2025",
+      listParentCodes: [{ codeType: "KDS", fullCode: "1011", name: "상수도 공사" }],
+      list: [{ sort: 1, title: "적용 범위", label: "1.1", contents: "<p>이 기준을 적용한다.</p>" }]
+    }];
+    const fetchFn: FetchLike = async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => viewer
+    });
+    const checker = new ApplicabilityChecker(new StandardsService(new KcscClient({ apiKey: "test-secret", fetchFn })));
+    const result = await checker.check({ standardCode: "KDS111005", projectType: "waterworks" });
+    expect(result.projectMatched).toBe(true);
+    expect(result.evidence).toContainEqual(expect.objectContaining({ keyword: "상수도", location: "parentPath" }));
+  });
+
+  it("validates an optional specialty family against the requested code", async () => {
+    await expect(checkerWithViewer().check({ standardCode: "KDS111005", specialtyType: "EXCS" }))
+      .rejects.toThrow("does not match KDS");
+  });
+
   it("reports the matched keyword and its location", async () => {
-    const result = await checkerWithText("방파제 설치에 따른다.", "2.1 일반사항").check({ standardCode: "KDS111005", projectType: "port" });
+    const result = await checkerWithText("방파제와 부두 설치에 따른다.", "2.1 일반사항").check({ standardCode: "KDS111005", projectType: "port" });
     expect(result.evidence.map((item) => item.keyword)).toContain("방파제");
     const evidence = result.evidence.find((item) => item.keyword === "방파제");
     expect(evidence?.category).toBe("port");

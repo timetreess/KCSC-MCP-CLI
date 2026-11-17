@@ -1,14 +1,20 @@
 import { PROJECT_TYPES, WORK_TYPES, type ApplicabilityEvidence, type ApplicabilityResult, type CheckApplicabilityInput, type ConfidenceLabel, type ProjectType, type StandardDocument, type StandardSummary, type WorkType } from "../api/kcsc-types.js";
+import type { KcscRequestOptions } from "../api/kcsc-client.js";
 import { PROJECT_KEYWORDS, StandardsService, WORK_KEYWORDS } from "./standards.js";
 
 const APPLICABILITY_CAVEAT =
   "적용성 판단은 계약문서·특기시방서·발주처 요구사항·전문기술검토 확인이 필요합니다. 본 도구는 참고용이며 최종 공학적 판단을 대체하지 않습니다.";
+const BODY_MATCH_MIN_OCCURRENCES = 2;
+const BODY_MATCH_MIN_DISTINCT_KEYWORDS = 2;
 
 export class ApplicabilityChecker {
   constructor(private readonly standards: StandardsService) {}
 
-  async check(input: CheckApplicabilityInput): Promise<ApplicabilityResult> {
-    const document = await this.standards.getStandard(input.standardCode);
+  async check(input: CheckApplicabilityInput, options: KcscRequestOptions = {}): Promise<ApplicabilityResult> {
+    const document = await this.standards.getStandard(input.standardCode, options);
+    if (input.specialtyType && input.specialtyType !== "all_specialty" && document.specialtyType !== input.specialtyType) {
+      throw new Error(`Requested specialty_type ${input.specialtyType} does not match ${document.codeType}.`);
+    }
     const evidence = collectEvidence(document);
     const matchedProjects = uniqueCategories(evidence.filter((item) => isProjectCategory(item.category)).map((item) => item.category as ProjectType));
     const matchedWorks = uniqueCategories(evidence.filter((item) => !isProjectCategory(item.category)).map((item) => item.category as WorkType));
@@ -43,31 +49,86 @@ function uniqueCategories<T extends string>(categories: readonly T[]): readonly 
 }
 
 function collectEvidence(document: StandardDocument): readonly ApplicabilityEvidence[] {
-  const located: { readonly text: string; readonly location: ApplicabilityEvidence["location"]; readonly sectionLabel?: string }[] = [
+  const headings: { readonly text: string; readonly location: ApplicabilityEvidence["location"]; readonly sectionLabel?: string }[] = [
     { text: document.code, location: "code" },
     { text: document.name, location: "name" },
     ...document.parentPath.map((entry) => ({ text: entry, location: "parentPath" as const })),
     ...document.sections.flatMap((section) => [
       { text: section.title, location: "sectionTitle" as const, sectionLabel: section.label },
-      { text: section.label, location: "sectionLabel" as const, sectionLabel: section.label },
-      { text: section.text, location: "sectionText" as const, sectionLabel: section.label }
+      { text: section.label, location: "sectionLabel" as const, sectionLabel: section.label }
     ])
   ];
+  const bodySections = document.sections.map((section, index) => ({
+    text: section.text,
+    location: "sectionText" as const,
+    sectionLabel: section.label,
+    sectionIndex: index
+  }));
 
   const evidence: ApplicabilityEvidence[] = [];
+  const bodyMatches: {
+    readonly category: ProjectType | WorkType;
+    readonly keyword: string;
+    readonly section: (typeof bodySections)[number];
+    readonly occurrences: number;
+  }[] = [];
   const categories: readonly (readonly [ProjectType | WorkType, readonly string[]])[] = [
     ...PROJECT_TYPES.map((project): readonly [ProjectType | WorkType, readonly string[]] => [project, PROJECT_KEYWORDS[project]]),
     ...WORK_TYPES.map((work): readonly [ProjectType | WorkType, readonly string[]] => [work, WORK_KEYWORDS[work]])
   ];
   for (const [category, keywords] of categories) {
     for (const keyword of keywords) {
-      const hit = located.find((field) => field.text.toLowerCase().includes(keyword.toLowerCase()));
+      const normalizedKeyword = keyword.toLowerCase();
+      const hit = headings.find((field) => field.text.toLowerCase().includes(normalizedKeyword));
       if (hit) {
         evidence.push({ category, keyword, location: hit.location, ...(hit.sectionLabel ? { sectionLabel: hit.sectionLabel } : {}) });
+        continue;
+      }
+
+      const bodyHit = bodySections
+        .map((section) => ({ section, occurrences: countOccurrences(section.text.toLowerCase(), normalizedKeyword) }))
+        .find((candidate) => candidate.occurrences > 0);
+      if (bodyHit) {
+        bodyMatches.push({ category, keyword, section: bodyHit.section, occurrences: bodyHit.occurrences });
       }
     }
   }
+
+  const matchesBySection = new Map<number, typeof bodyMatches>();
+  for (const match of bodyMatches) {
+    const sectionMatches = matchesBySection.get(match.section.sectionIndex) ?? [];
+    sectionMatches.push(match);
+    matchesBySection.set(match.section.sectionIndex, sectionMatches);
+  }
+  for (const matches of matchesBySection.values()) {
+    const distinctKeywords = new Set(matches.map((match) => match.keyword.toLowerCase())).size;
+    if (distinctKeywords < BODY_MATCH_MIN_DISTINCT_KEYWORDS && !matches.some((match) => match.occurrences >= BODY_MATCH_MIN_OCCURRENCES)) {
+      continue;
+    }
+    for (const match of matches) {
+      evidence.push({
+        category: match.category,
+        keyword: match.keyword,
+        location: match.section.location,
+        sectionLabel: match.section.sectionLabel
+      });
+    }
+  }
   return evidence;
+}
+
+function countOccurrences(text: string, keyword: string): number {
+  let count = 0;
+  let position = 0;
+  while (position < text.length) {
+    const match = text.indexOf(keyword, position);
+    if (match < 0) {
+      return count;
+    }
+    count += 1;
+    position = match + keyword.length;
+  }
+  return count;
 }
 
 function buildReasoning(input: CheckApplicabilityInput, matchedProjects: readonly ProjectType[], matchedWorks: readonly WorkType[], evidence: readonly ApplicabilityEvidence[]): readonly string[] {

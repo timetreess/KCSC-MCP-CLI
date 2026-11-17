@@ -22,6 +22,11 @@ import { normalizeHtml, tokenizeQuery } from "./formatting.js";
 
 const SPECIALTY_TYPES: readonly SpecialtyType[] = ["EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS"];
 const DEFAULT_LIMIT = 10;
+const SEARCH_STOP_WORDS = new Set([
+  "기준", "기준을", "기준의", "기준에", "기준은", "기준도",
+  "관련", "관련된", "찾아", "찾아줘", "찾아주세요", "검색", "검색해", "검색해줘",
+  "원문", "알려줘", "알려주세요", "확인", "확인해줘", "해주세요", "해줘"
+]);
 
 export const PROJECT_KEYWORDS: Readonly<Record<ProjectType, readonly string[]>> = {
   road: ["도로", "포장", "일반국도", "고속도로", "차도"],
@@ -31,7 +36,7 @@ export const PROJECT_KEYWORDS: Readonly<Record<ProjectType, readonly string[]>> 
   river: ["하천", "제방", "호안", "수문", "하상"],
   dam: ["저수지", "댐체", "여수로"],
   port: ["항만", "어항", "방파제", "부두", "하역", "호안", "해상"],
-  waterworks: ["상수도", "하수도", "하수관로", "관로", "수도", "상수", "하수", "정수", "수처리"],
+  waterworks: ["상수도", "하수도", "하수관로", "관로", "정수장", "정수처리", "수처리"],
   site: ["단지", "택지", "조성", "택지개발", "단지조성", "기반시설"],
   building: ["건축", "건축공사", "건축물"],
   plant: ["기계설비", "전기설비", "산업환경설비", "플랜트", "정유", "가스", "산업설비"],
@@ -41,7 +46,7 @@ export const PROJECT_KEYWORDS: Readonly<Record<ProjectType, readonly string[]>> 
 export const WORK_KEYWORDS: Readonly<Record<WorkType, readonly string[]>> = {
   earthwork: ["토공", "되메우기", "되메움", "흙쌓기", "성토", "흙깎기", "절토", "다짐", "backfill", "compaction"],
   geotechnical: ["지반", "지질", "연약지반", "지반조사"],
-  foundation: ["기초", "말뚝", "파일", "기초공", "지정"],
+  foundation: ["기초", "말뚝", "파일", "기초공"],
   concrete: ["콘크리트", "타설", "양생", "레미콘", "시멘트", "철근", "배근"],
   steel: ["강구조", "강재", "용접", "볼트", "이음"],
   temporary: ["가설", "흙막이", "토류", "가시설", "버팀", "동바리"],
@@ -77,7 +82,7 @@ export class StandardsService {
 
   private rankSummaries(metadata: readonly KcscListItem[], input: SearchStandardInput, query: string): readonly StandardSummary[] {
     const exactCode = parseStandardCode(query);
-    const terms = tokenizeQuery(query);
+    const terms = exactCode ? [] : tokenizeQuery(query).filter((term) => !SEARCH_STOP_WORDS.has(term));
     const projectTerms = input.projectType ? PROJECT_KEYWORDS[input.projectType] : [];
     const workTerms = input.workType ? WORK_KEYWORDS[input.workType] : [];
 
@@ -86,19 +91,19 @@ export class StandardsService {
       .filter((summary): summary is StandardSummary => summary !== null)
       .filter((summary) => matchesFilters(summary, input))
       .map((summary) => scoreSummary(summary, exactCode, terms, projectTerms, workTerms))
-      .filter((result) => result.score > 0 || terms.length === 0)
+      .filter((result) => result.score > 0)
       .sort((a, b) => b.score - a.score || a.summary.code.localeCompare(b.summary.code, "ko"));
 
     return candidates.slice(0, input.limit ?? DEFAULT_LIMIT).map((candidate) => candidate.summary);
   }
 
-  async searchStandardDual(input: Omit<SearchStandardInput, "standardType" | "specialtyType">): Promise<StandardDualResult> {
+  async searchStandardDual(input: Omit<SearchStandardInput, "standardType" | "specialtyType">, options: KcscRequestOptions = {}): Promise<StandardDualResult> {
     const query = input.query.trim();
     if (!query) {
       throw new StandardsServiceError("Search query is required.");
     }
 
-    const metadata = await this.client.fetchCodeList();
+    const metadata = await this.client.fetchCodeList(options);
     const kdsResults = this.rankSummaries(metadata, { ...input, standardType: "KDS" }, query);
     const kcsResults = this.rankSummaries(metadata, { ...input, standardType: "KCS" }, query);
 
@@ -125,13 +130,13 @@ export class StandardsService {
     return toDocument(item, parsed.type, parsed.apiCode);
   }
 
-  async latestCheck(codeInput: string): Promise<LatestCheckResult> {
+  async latestCheck(codeInput: string, options: KcscRequestOptions = {}): Promise<LatestCheckResult> {
     const parsed = parseStandardCode(codeInput);
     if (!parsed) {
       throw new StandardsServiceError("Invalid standard code format. Expected forms like KDS 11 10 05 or KCS571005.");
     }
 
-    const metadata = await this.client.fetchCodeList();
+    const metadata = await this.client.fetchCodeList(options);
     const summary = metadata
       .map((item) => toSummary(item))
       .find((candidate) => candidate?.codeType === parsed.type && candidate.apiCode === parsed.apiCode);
@@ -140,7 +145,6 @@ export class StandardsService {
       return {
         inputCode: parsed.formatted,
         exists: false,
-        latestKnown: false,
         metadataStatus: "not-found-in-current-metadata",
         message: `${parsed.formatted} was not found in current KCSC CodeList metadata. Absence from this search scope is not proof that no standard exists.`
       };
@@ -149,7 +153,6 @@ export class StandardsService {
     return {
       inputCode: parsed.formatted,
       exists: true,
-      latestKnown: true,
       metadataStatus: "current-metadata-found",
       standard: summary,
       message: `${summary.code} exists in current KCSC CodeList metadata. This confirms current metadata presence only; it does not compare historical versions or determine project contractual applicability.`
@@ -217,7 +220,7 @@ export function toDocument(item: KcscViewerItem, fallbackType: StandardCodeType,
     ...(version ? { version } : {}),
     ...(updateDate ? { updateDate } : {}),
     sourceUrl: buildSourceUrl(codeType, apiCode),
-    parentPath: [],
+    parentPath: parentPathFrom(item.listParentCodes),
     sections,
     confidence: documentConfidence(hasBodyText, evidenceGaps.length === 0),
     evidenceGaps
@@ -277,7 +280,9 @@ function scoreSummary(
 ): { readonly summary: StandardSummary; readonly score: number } {
   let score = 0;
   const reason: string[] = [];
-  const haystack = [summary.code, summary.apiCode, summary.name, ...summary.parentPath].join(" ").toLowerCase();
+  const name = summary.name.toLowerCase();
+  const parentPath = summary.parentPath.join(" ").toLowerCase();
+  const code = [summary.codeType, summary.code, summary.apiCode].join(" ").toLowerCase();
 
   if (exactCode && summary.codeType === exactCode.type && summary.apiCode === exactCode.apiCode) {
     score += 1000;
@@ -285,23 +290,37 @@ function scoreSummary(
   }
 
   for (const term of queryTerms) {
-    if (haystack.includes(term)) {
-      score += 10;
-      reason.push(`검색어 일치: ${term}`);
+    if (name.includes(term)) {
+      score += 12;
+      reason.push(`기준명 일치: ${term}`);
+    }
+    if (parentPath.includes(term)) {
+      score += 5;
+      reason.push(`분류경로 일치: ${term}`);
+    }
+    if (code.includes(term)) {
+      score += 1;
+      reason.push(`기준코드 토큰 일치: ${term}`);
     }
   }
 
   for (const term of projectTerms) {
-    if (haystack.includes(term.toLowerCase())) {
+    if (name.includes(term.toLowerCase())) {
       score += 4;
       reason.push(`프로젝트 분류 키워드 일치: ${term}`);
+    } else if (parentPath.includes(term.toLowerCase())) {
+      score += 3;
+      reason.push(`프로젝트 분류경로 일치: ${term}`);
     }
   }
 
   for (const term of workTerms) {
-    if (haystack.includes(term.toLowerCase())) {
+    if (name.includes(term.toLowerCase())) {
       score += 3;
       reason.push(`공종 분류 키워드 일치: ${term}`);
+    } else if (parentPath.includes(term.toLowerCase())) {
+      score += 2;
+      reason.push(`공종 분류경로 일치: ${term}`);
     }
   }
 
