@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { SPECIALTY_TYPE_FILTERS, STANDARD_TYPE_FILTERS } from "../api/kcsc-types.js";
 import { projectTypeSchema, specialtyTypeSchema, standardTypeSchema, workTypeSchema } from "../core/validators.js";
 
 export const searchStandardInputSchema = z.object({
@@ -53,13 +52,11 @@ export const verifyCitationInputSchema = z.object({
 });
 
 const confidenceSchema = z.enum(["원문 직접 근거", "관련 조항 추론", "근거 미확인"]);
-const standardTypeFilterSchema = z.enum(STANDARD_TYPE_FILTERS);
-const specialtyTypeSchemaValue = z.enum(SPECIALTY_TYPE_FILTERS);
 
 const standardSummarySchema = z.object({
-  standardType: standardTypeFilterSchema,
+  standardType: standardTypeSchema,
   codeType: z.string(),
-  specialtyType: specialtyTypeSchemaValue.optional(),
+  specialtyType: specialtyTypeSchema.optional(),
   code: z.string(),
   apiCode: z.string(),
   fullCode: z.string().optional(),
@@ -87,9 +84,9 @@ const standardDocumentSchema = standardSummarySchema.omit({ reason: true }).exte
 });
 
 const clauseEvidenceSchema = z.object({
-  standardType: standardTypeFilterSchema,
+  standardType: standardTypeSchema,
   codeType: z.string(),
-  specialtyType: specialtyTypeSchemaValue.optional(),
+  specialtyType: specialtyTypeSchema.optional(),
   code: z.string(),
   apiCode: z.string(),
   name: z.string(),

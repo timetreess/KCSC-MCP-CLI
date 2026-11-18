@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { KcscClient, type FetchLike } from "../../src/api/kcsc-client.js";
-import { StandardsService, toDocument } from "../../src/core/standards.js";
+import { SPECIALTY_CODE_TYPES } from "../../src/api/kcsc-types.js";
+import { StandardsService, toDocument, toSummary } from "../../src/core/standards.js";
 import { codeListFixture, emptyViewerFixture, kdsViewerFixture } from "../fixtures/kcsc-fixtures.js";
 
 function serviceWith(fetchFn: FetchLike): StandardsService {
@@ -52,6 +53,16 @@ describe("StandardsService", () => {
     const results = await service.searchStandard({ query: "포장", standardType: "specialty", specialtyType: "EXCS" });
     expect(results).toHaveLength(1);
     expect(results[0]?.specialtyType).toBe("EXCS");
+  });
+
+  it("recognizes every supported specialty code type", () => {
+    const summaries = SPECIALTY_CODE_TYPES.map((codeType) => toSummary({
+      codeType,
+      code: "445010",
+      name: `${codeType} standard`
+    }));
+
+    expect(summaries.map((summary) => summary?.specialtyType)).toEqual(SPECIALTY_CODE_TYPES);
   });
 
   it("gets and normalizes a standard document", async () => {

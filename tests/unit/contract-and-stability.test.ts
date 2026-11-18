@@ -55,7 +55,12 @@ describe("MCP output schemas reject malformed payloads", () => {
     expect(documentOutputSchema.safeParse({
       document: {
         ...document,
-        sections: document.sections.map(({ html: _html, text: _text, ...section }) => section)
+        sections: document.sections.map((section) => ({
+          sort: section.sort,
+          title: section.title,
+          ...(section.level !== undefined ? { level: section.level } : {}),
+          label: section.label
+        }))
       }
     }).success).toBe(true);
 

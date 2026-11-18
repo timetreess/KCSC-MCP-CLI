@@ -1,4 +1,4 @@
-import type { ClauseEvidence, ClauseRetrievalFailure, ClauseSearchResult, ConfidenceLabel, FindClauseInput, StandardDocument, StandardSection, StandardSummary } from "../api/kcsc-types.js";
+import type { ClauseEvidence, ClauseRetrievalFailure, ClauseSearchResult, ConfidenceLabel, FindClauseInput, StandardDocument, StandardSection } from "../api/kcsc-types.js";
 import { KcscClientError, type KcscRequestOptions } from "../api/kcsc-client.js";
 import { StandardsService, StandardsServiceError } from "./standards.js";
 import { tokenizeQuery } from "./formatting.js";

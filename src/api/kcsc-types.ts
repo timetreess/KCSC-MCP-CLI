@@ -1,4 +1,6 @@
-export const STANDARD_CODE_TYPES = ["KDS", "KCS", "EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS"] as const;
+export const SPECIALTY_CODE_TYPES = ["EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS"] as const;
+
+export const STANDARD_CODE_TYPES = ["KDS", "KCS", ...SPECIALTY_CODE_TYPES] as const;
 
 export type StandardCodeType = (typeof STANDARD_CODE_TYPES)[number];
 
@@ -6,9 +8,9 @@ export const STANDARD_TYPE_FILTERS = ["KDS", "KCS", "specialty", "all"] as const
 
 export type StandardTypeFilter = (typeof STANDARD_TYPE_FILTERS)[number];
 
-export type SpecialtyType = Exclude<StandardCodeType, "KDS" | "KCS">;
+export type SpecialtyType = (typeof SPECIALTY_CODE_TYPES)[number];
 
-export const SPECIALTY_TYPE_FILTERS = ["EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS", "all_specialty"] as const;
+export const SPECIALTY_TYPE_FILTERS = [...SPECIALTY_CODE_TYPES, "all_specialty"] as const;
 
 export type SpecialtyTypeFilter = (typeof SPECIALTY_TYPE_FILTERS)[number];
 

@@ -16,13 +16,14 @@ Set `KCSC_API_KEY` in the repository's `.env` for local API usage. The npm packa
 ## Scripts
 
 ```bash
+npm run lint
 npm run typecheck
 npm test
 npm run build
 npm run verify:package
 ```
 
-Run all four before opening a pull request. `verify:package` packs the tarball, installs it into a
+Run all five before opening a pull request. `verify:package` packs the tarball, installs it into a
 throwaway directory, and runs the shipped `kcsc` CLI and `kcsc-mcp` stdio server. It needs no API key
 and sends no request, so it is safe in CI.
 

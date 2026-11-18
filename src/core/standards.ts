@@ -1,3 +1,4 @@
+import { SPECIALTY_CODE_TYPES } from "../api/kcsc-types.js";
 import type {
   ConfidenceLabel,
   KcscListItem,
@@ -13,14 +14,12 @@ import type {
   StandardDocument,
   StandardSection,
   StandardSummary,
-  StandardTypeFilter,
   WorkType
 } from "../api/kcsc-types.js";
 import { KcscClient, type KcscRequestOptions } from "../api/kcsc-client.js";
 import { formatStandardCode, isSupportedCodeType, parseStandardCode, standardTypeFromCodeType } from "./code-parser.js";
 import { normalizeHtml, tokenizeQuery } from "./formatting.js";
 
-const SPECIALTY_TYPES: readonly SpecialtyType[] = ["EXCS", "KRACS", "KRCCS", "KWCS", "LHCS", "NHCS", "SMCS"];
 const DEFAULT_LIMIT = 10;
 const SEARCH_STOP_WORDS = new Set([
   "기준", "기준을", "기준의", "기준에", "기준은", "기준도",
@@ -336,7 +335,7 @@ function normalizeCodeType(value: string | null | undefined): StandardCodeType |
 }
 
 function getSpecialtyType(codeType: StandardCodeType): SpecialtyType | undefined {
-  return SPECIALTY_TYPES.includes(codeType as SpecialtyType) ? (codeType as SpecialtyType) : undefined;
+  return SPECIALTY_CODE_TYPES.find((specialtyType) => specialtyType === codeType);
 }
 
 function parentPathFrom(value: readonly KcscParentCode[] | string | null | undefined): readonly string[] {

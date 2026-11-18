@@ -7,7 +7,7 @@
  * only asked to list tools, so this is safe to run in CI on every pull request.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -64,6 +64,16 @@ await step("npm install into a clean directory", () => {
 });
 
 const installedRoot = join(consumerDir, "node_modules", "kcsc-standards-mcp");
+
+await step("installed CLI version matches package manifest", () => {
+  const manifest = JSON.parse(readFileSync(join(installedRoot, "package.json"), "utf8"));
+  const version = run(process.execPath, [join(installedRoot, "dist", "src", "cli", "index.js"), "--version"]).trim();
+  const expected = `${manifest.name} ${manifest.version}`;
+  if (version !== expected) {
+    throw new Error(`expected "${expected}", received "${version}"`);
+  }
+  return version;
+});
 
 await step("package ships only intended files", () => {
   const entries = readdirSync(installedRoot).sort();
