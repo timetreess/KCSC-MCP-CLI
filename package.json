@@ -13,7 +13,8 @@
   },
   "bin": {
     "kcsc": "./dist/src/cli/index.js",
-    "kcsc-mcp": "./dist/src/mcp/server.js"
+    "kcsc-mcp": "./dist/src/mcp/server.js",
+    "kcsc-mcp-http": "./dist/src/http/server.js"
   },
   "files": [
     "dist/src",
@@ -50,7 +51,9 @@
     "test": "vitest run",
     "verify:package": "node scripts/verify-package.mjs",
     "dev:cli": "tsx src/cli/index.ts",
-    "dev:mcp": "tsx src/mcp/server.ts"
+    "dev:mcp": "tsx src/mcp/server.ts",
+    "start:http": "node dist/src/http/server.js",
+    "dev:http": "tsx src/http/server.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
