@@ -14,6 +14,8 @@ This unreleased major version groups the public contract changes made since 1.0.
 
 ### Added
 
+- Remote Streamable HTTP endpoint (`src/http/handler.ts`, `kcsc-mcp-http`) and Vercel deployment config so the tools can be added to Claude on the web as a custom connector. Each request carries its own KCSC key via `?key=` or the `x-kcsc-api-key` header; keyless requests are rejected with 401.
+
 - `ClauseFinder.findClauseWithDiagnostics()` returns `{ clauses, failures, searchScope, searchedCodes, scopeNote }`.
   `find_clause` reports the same fields, and `kcsc clause` prints the scope note on stderr.
 - `StandardDocument.evidenceGaps` lists evidence fields KCSC did not supply (for example a missing

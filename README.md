@@ -119,6 +119,23 @@ AI에게 보고서 문장이나 검토의견 초안을 맡기면, 문장은 그�
 
 ---
 
+## Claude 웹(claude.ai)에서 쓰기 — 원격 MCP
+
+Claude 웹은 내 PC가 아니라 Anthropic 클라우드에서 MCP 서버로 접속하므로, 인터넷에 공개된 서버 주소가 필요합니다. 이 레포는 Vercel에 그대로 배포할 수 있게 구성되어 있습니다(`vercel.json`, 서울 리전 `icn1`).
+
+1. [vercel.com](https://vercel.com)에 GitHub 계정으로 로그인 → **Add New → Project** → 이 레포 선택 → **Deploy** (설정 변경 불필요)
+2. 배포가 끝나면 주소(예: `https://kcsc-mcp-cli-xxxx.vercel.app`)를 확인하고, 브라우저로 `/api/health`를 열어 `"status":"ok"`가 나오는지 확인
+3. Claude 웹 → **설정 → 커넥터 → 사용자 지정 커넥터 추가**
+   - 이름: `KCSC 건설기준`
+   - URL: `https://<배포 주소>/mcp?key=<본인 KCSC API 키>`
+4. 새 대화에서 도구 메뉴에 KCSC 건설기준이 켜져 있는지 확인 후 질의
+
+키는 서버에 저장하지 않고 요청마다 URL의 `?key=`로 받습니다. 그래서 같은 서버 주소를 다른 사람이 써도 각자 자기 KCSC 키로 조회합니다. 키 없이 호출하면 401로 거부합니다. (Vercel 환경변수에 `KCSC_API_KEY`를 넣으면 키 없는 요청도 그 키로 처리되니, 공개 서버라면 넣지 마세요.)
+
+로컬에서 HTTP 모드 확인: `npm run build && npm run start:http` → `http://localhost:8787/mcp?key=...`
+
+---
+
 ## KCSC API 키는 어떻게 준비하나요?
 
 이 도구를 쓰려면 KCSC OpenAPI 인증키가 필요합니다. 키 발급은 한 번만 준비하면 되고, 이후에는 AI 에이전트가 로컬 설정에 연결해주면 됩니다.
